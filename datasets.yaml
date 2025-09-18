@@ -1,0 +1,30 @@
+iris:
+  url: "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data"
+  target_column: "species"
+  dataset_type: "iris" # Used by the data handling script
+  columns:
+    - "sepal_length"
+    - "sepal_width"
+    - "petal_length"
+    - "petal_width"
+    - "species"
+
+wine:
+  url: "https://archive.ics.uci.edu/ml/machine-learning-databases/wine/wine.data"
+  target_column: "class"
+  dataset_type: "wine" # Used by the data handling script
+  columns:
+    - "class"
+    - "alcohol"
+    - "malic_acid"
+    - "ash"
+    - "alcalinity_of_ash"
+    - "magnesium"
+    - "total_phenols"
+    - "flavanoids"
+    - "nonflavanoid_phenols"
+    - "proanthocyanins"
+    - "color_intensity"
+    - "hue"
+    - "od280_od315_of_diluted_wines"
+    - "proline"

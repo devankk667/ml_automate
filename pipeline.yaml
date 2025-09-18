@@ -1,0 +1,157 @@
+# PIPELINE DEFINITION
+# Name: generic-mlops-demo-pipeline
+# Description: A generic pipeline that can be configured for different datasets.
+# Inputs:
+#    data_url: str
+#    dataset_type: str
+#    experiment_name: str
+#    target_column: str
+components:
+  comp-ingest-data:
+    executorLabel: exec-ingest-data
+    inputDefinitions:
+      parameters:
+        url:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        raw_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-prepare-data:
+    executorLabel: exec-prepare-data
+    inputDefinitions:
+      artifacts:
+        raw_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        dataset_type:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        processed_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        processed_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        experiment_name:
+          parameterType: STRING
+        target_column:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-ingest-data:
+      container:
+        args:
+        - --url
+        - '{{$.inputs.parameters[''url'']}}'
+        - --output_path
+        - '{{$.outputs.artifacts[''raw_data''].path}}'
+        command:
+        - python
+        - data_ingestion.py
+        image: ingest-component:latest
+    exec-prepare-data:
+      container:
+        args:
+        - --input_path
+        - '{{$.inputs.artifacts[''raw_data''].path}}'
+        - --output_path
+        - '{{$.outputs.artifacts[''processed_data''].path}}'
+        - --dataset_type
+        - '{{$.inputs.parameters[''dataset_type'']}}'
+        command:
+        - python
+        - data_handling.py
+        image: prepare-component:latest
+    exec-train-model:
+      container:
+        args:
+        - --input_path
+        - '{{$.inputs.artifacts[''processed_data''].path}}'
+        - --target_column
+        - '{{$.inputs.parameters[''target_column'']}}'
+        - --experiment_name
+        - '{{$.inputs.parameters[''experiment_name'']}}'
+        command:
+        - python
+        - train.py
+        image: train-component:latest
+pipelineInfo:
+  description: A generic pipeline that can be configured for different datasets.
+  name: generic-mlops-demo-pipeline
+root:
+  dag:
+    tasks:
+      ingest-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-ingest-data
+        inputs:
+          parameters:
+            url:
+              componentInputParameter: data_url
+        taskInfo:
+          name: ingest-data
+      prepare-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-prepare-data
+        dependentTasks:
+        - ingest-data
+        inputs:
+          artifacts:
+            raw_data:
+              taskOutputArtifact:
+                outputArtifactKey: raw_data
+                producerTask: ingest-data
+          parameters:
+            dataset_type:
+              componentInputParameter: dataset_type
+        taskInfo:
+          name: prepare-data
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - prepare-data
+        inputs:
+          artifacts:
+            processed_data:
+              taskOutputArtifact:
+                outputArtifactKey: processed_data
+                producerTask: prepare-data
+          parameters:
+            experiment_name:
+              componentInputParameter: experiment_name
+            target_column:
+              componentInputParameter: target_column
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      data_url:
+        parameterType: STRING
+      dataset_type:
+        parameterType: STRING
+      experiment_name:
+        parameterType: STRING
+      target_column:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.14.3

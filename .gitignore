@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# MLflow
+mlruns/
+
+# Data files - should be handled by DVC
+data/*.csv
+
+# Generated Artifacts
+*.png
+*.joblib
+
+# Environment
+.env
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
