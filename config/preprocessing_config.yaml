@@ -1,0 +1,172 @@
+# Preprocessing configuration
+
+# Missing value imputation
+missing_values:
+  strategy: 'auto'  # 'auto', 'mean', 'median', 'most_frequent', 'constant', 'drop'
+  fill_value: null  # Only used when strategy='constant'
+  drop_columns_with_high_missing: 0.8  # Drop columns with >80% missing values
+  add_missing_indicator: true  # Add binary indicators for missing values
+
+# Categorical encoding
+categorical:
+  strategy: 'onehot'  # 'onehot', 'ordinal', 'target', 'drop'
+  handle_unknown: 'ignore'  # 'error', 'ignore'
+  min_frequency: 0.01  # Minimum frequency for categories to be kept
+  max_categories: 50  # Maximum number of categories to keep
+  target_encoder:
+    min_samples_leaf: 20  # Minimum samples per leaf for target encoding
+    smoothing: 10.0  # Smoothing parameter for target encoding
+
+# Feature scaling
+scaling:
+  strategy: 'standard'  # 'standard', 'minmax', 'robust', 'power', 'none'
+  with_mean: true  # Whether to center the data before scaling
+  with_std: true  # Whether to scale the data to unit variance
+  power_transform: False  # Whether to apply power transform
+  quantile_range: [5.0, 95.0]  # Range for robust scaling
+
+# Feature selection
+feature_selection:
+  strategy: 'none'  # 'variance', 'correlation', 'model', 'none'
+  n_features: 'auto'  # 'auto' for sqrt(n_features) or integer
+  threshold: 0.0  # Threshold for selection
+  variance_threshold: 0.0  # Variance threshold for feature selection
+  correlation_threshold: 0.9  # Threshold for correlation-based selection
+  model_based_selection:  # Parameters for model-based selection
+    estimator: 'random_forest'  # 'random_forest', 'lasso', 'xgboost'
+    importance_getter: 'auto'  # 'auto', 'feature_importances_', 'coef_'
+    n_features_to_select: 'auto'  # Number of features to select
+
+# Outlier detection and handling
+outliers:
+  strategy: 'none'  # 'zscore', 'iqr', 'isolation_forest', 'none'
+  threshold: 3.0  # Z-score or IQR multiplier threshold
+  method: 'clip'  # 'clip', 'remove', 'impute'
+  contamination: 'auto'  # Contamination parameter for isolation forest
+  random_state: 42  # Random state for reproducibility
+
+# Feature engineering
+feature_engineering:
+  polynomial_features: False  # Whether to generate polynomial features
+  polynomial_degree: 2  # Maximum degree of polynomial features
+  interaction_only: False  # Whether to only generate interaction features
+  include_bias: True  # Whether to include a bias column
+  
+  # Feature interactions
+  interactions: False  # Whether to generate interaction features
+  interaction_pairs: []  # List of feature pairs to create interactions for
+  
+  # Date/time features
+  datetime_features: False  # Whether to extract datetime features
+  date_columns: []  # List of date columns to process
+  
+  # Text features
+  text_features: False  # Whether to process text features
+  text_columns: []  # List of text columns to process
+  text_processing:
+    vectorizer: 'tfidf'  # 'tfidf', 'count', 'hashing'
+    ngram_range: [1, 2]  # Range of n-grams to generate
+    max_features: 1000  # Maximum number of features to keep
+    min_df: 1  # Minimum document frequency for terms
+    max_df: 1.0  # Maximum document frequency for terms
+    stop_words: 'english'  # 'english' or None
+    
+  # Target encoding
+  target_encoding: False  # Whether to apply target encoding
+  target_encoder:  # Parameters for target encoding
+    min_samples_leaf: 20
+    smoothing: 10.0
+    noise: 0.01  # Amount of noise to add to target encoding
+    
+  # Binning
+  binning: False  # Whether to apply binning
+  binning_strategy: 'quantile'  # 'uniform', 'quantile', 'kmeans'
+  n_bins: 5  # Number of bins to create
+
+# Feature transformation
+transformation:
+  log_transform: False  # Whether to apply log transform
+  log_transform_columns: []  # Columns to apply log transform to
+  box_cox: False  # Whether to apply Box-Cox transform
+  box_cox_columns: []  # Columns to apply Box-Cox transform to
+  yeo_johnson: False  # Whether to apply Yeo-Johnson transform
+  yeo_johnson_columns: []  # Columns to apply Yeo-Johnson transform to
+
+# Dimensionality reduction
+dimensionality_reduction:
+  strategy: 'none'  # 'pca', 'tsne', 'umap', 'none'
+  n_components: 0.95  # Number of components or variance to keep
+  random_state: 42  # Random state for reproducibility
+  
+  # PCA parameters
+  pca:
+    svd_solver: 'auto'  # 'auto', 'full', 'arpack', 'randomized'
+    whiten: False  # Whether to whiten the data
+    
+  # t-SNE parameters
+  tsne:
+    perplexity: 30.0
+    early_exaggeration: 12.0
+    learning_rate: 'auto'
+    n_iter: 1000
+    
+  # UMAP parameters
+  umap:
+    n_neighbors: 15
+    min_dist: 0.1
+    metric: 'euclidean'
+
+# Class balancing (for classification)
+class_balancing:
+  strategy: 'none'  # 'oversample', 'undersample', 'smote', 'adasyn', 'none'
+  sampling_strategy: 'auto'  # 'auto', 'majority', 'not minority', etc.
+  random_state: 42  # Random state for reproducibility
+  
+  # SMOTE parameters
+  smote:
+    k_neighbors: 5
+    
+  # ADASYN parameters
+  adasyn:
+    n_neighbors: 5
+    
+  # Random under/over sampling
+  random_oversample: False
+  random_undersample: False
+  sampling_ratio: 1.0  # Ratio of minority to majority class
+
+# Data splitting
+train_test_split:
+  test_size: 0.2  # Fraction of data to use for testing
+  random_state: 42  # Random state for reproducibility
+  stratify: true  # Whether to stratify the split (for classification)
+  shuffle: true  # Whether to shuffle the data before splitting
+
+# Cross-validation
+cross_validation:
+  n_splits: 5  # Number of folds
+  shuffle: true  # Whether to shuffle the data before splitting
+  random_state: 42  # Random state for reproducibility
+  
+  # Stratified K-Fold (for classification)
+  stratified: true  # Whether to use stratified k-fold for classification
+  
+  # Time series split (for time series data)
+  time_series: False  # Whether to use time series split
+  max_train_size: None  # Maximum size for a single training set
+  
+  # Group K-Fold (for grouped data)
+  groups: None  # Group labels for the samples
+
+# Parallel processing
+parallel:
+  n_jobs: -1  # Number of jobs to run in parallel (-1 uses all available cores)
+  backend: 'loky'  # 'loky', 'multiprocessing', 'threading', or 'dask'
+  prefer: None  # 'processes' or 'threads'
+  verbose: 0  # Verbosity level
+
+# Logging
+logging:
+  level: 'INFO'  # 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: 'preprocessing.log'  # Log file path (None for console only)

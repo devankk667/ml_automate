@@ -32,7 +32,7 @@ def main(dataset_name: str):
 
     # --- Step 1: Data Ingestion ---
     ingestion_command = [
-        "python", "src/data_ingestion.py",
+        sys.executable, "src/data_ingestion.py",  # Changed from "python" to sys.executable
         "--url", config['url'],
         "--output_path", raw_data_path
     ]
@@ -40,7 +40,7 @@ def main(dataset_name: str):
 
     # --- Step 2: Data Handling ---
     handling_command = [
-        "python", "src/data_handling.py",
+        sys.executable, "src/data_handling.py",  # Changed from "python" to sys.executable
         "--input_path", raw_data_path,
         "--output_path", processed_data_path,
         "--dataset_type", config['dataset_type']
@@ -49,7 +49,7 @@ def main(dataset_name: str):
 
     # --- Step 3: Model Training ---
     training_command = [
-        "python", "src/train.py",
+        sys.executable, "src/train.py",  # Changed from "python" to sys.executable
         "--input_path", processed_data_path,
         "--target_column", config['target_column'],
         "--experiment_name", config.get('experiment_name', f"{dataset_name.title()} Classification")

@@ -1,0 +1,381 @@
+# AutoML Configuration
+# This file contains configuration settings for the AutoML pipeline
+
+# General settings
+general:
+  random_state: 42
+  n_jobs: -1  # Number of CPU cores to use (-1 for all available)
+  test_size: 0.2  # Fraction of data to use for testing
+  cv_folds: 5  # Number of cross-validation folds
+  scoring:  # Scoring metrics to optimize for different tasks
+    classification: accuracy
+    regression: neg_mean_squared_error
+
+# Data preprocessing
+preprocessing:
+  missing_values:
+    strategy: auto  # 'auto', 'mean', 'median', 'most_frequent', 'constant', 'drop'
+    fill_value: null  # Only used when strategy='constant'
+    drop_columns_with_high_missing: 0.8  # Drop columns with >80% missing values
+  
+  categorical:
+    strategy: onehot  # 'onehot', 'ordinal', 'target', 'drop'
+    handle_unknown: ignore  # 'error', 'ignore'
+    min_frequency: 0.01  # Minimum frequency for categories to be kept
+  
+  scaling:
+    strategy: standard  # 'standard', 'minmax', 'robust', 'power', 'none'
+    with_mean: true
+    with_std: true
+  
+  feature_selection:
+    strategy: none  # 'variance', 'correlation', 'model', 'none'
+    n_features: auto  # Number of features to select, 'auto' for sqrt(n_features)
+    threshold: 0.0  # Threshold for selection
+  
+  outliers:
+    strategy: none  # 'zscore', 'iqr', 'none'
+    threshold: 3.0  # Z-score or IQR multiplier threshold
+    method: clip  # 'clip', 'remove', 'impute'
+
+# Model configuration
+models:
+  # Classification models
+  classification:
+    logistic_regression:
+      class: sklearn.linear_model.LogisticRegression
+      params:
+        C: [0.1, 1.0, 10.0]
+        penalty: ['l2']
+        solver: ['lbfgs', 'saga']
+        max_iter: [100, 200]
+    
+    random_forest:
+      class: sklearn.ensemble.RandomForestClassifier
+      params:
+        n_estimators: [50, 100, 200]
+        max_depth: [None, 5, 10, 20]
+        min_samples_split: [2, 5, 10]
+        min_samples_leaf: [1, 2, 4]
+    
+    xgboost:
+      class: xgboost.XGBClassifier
+      params:
+        n_estimators: [50, 100, 200]
+        max_depth: [3, 6, 9]
+        learning_rate: [0.01, 0.1, 0.3]
+        subsample: [0.8, 1.0]
+    
+    # Add more classification models as needed
+  
+  # Regression models
+  regression:
+    linear_regression:
+      class: sklearn.linear_model.LinearRegression
+      params: {}
+    
+    random_forest_regressor:
+      class: sklearn.ensemble.RandomForestRegressor
+      params:
+        n_estimators: [50, 100, 200]
+        max_depth: [None, 5, 10, 20]
+        min_samples_split: [2, 5, 10]
+        min_samples_leaf: [1, 2, 4]
+    
+    xgboost_regressor:
+      class: xgboost.XGBRegressor
+      params:
+        n_estimators: [50, 100, 200]
+        max_depth: [3, 6, 9]
+        learning_rate: [0.01, 0.1, 0.3]
+        subsample: [0.8, 1.0]
+    
+    # Add more regression models as needed
+
+# Neural network configuration
+neural_networks:
+  # Common parameters for all neural networks
+  common:
+    batch_size: [32, 64, 128]
+    epochs: 100
+    early_stopping_patience: 10
+    learning_rate: [0.001, 0.01, 0.1]
+    optimizer: ['adam', 'rmsprop']
+    
+    # Regularization
+    dropout_rate: [0.0, 0.2, 0.5]
+    l2_reg: [0.0, 0.01, 0.1]
+  
+  # Classification-specific parameters
+  classification:
+    output_activation: 'softmax'
+    loss: 'categorical_crossentropy'
+    metrics: ['accuracy']
+    
+    # Architecture
+    hidden_layers: [1, 2, 3]
+    units_per_layer: [32, 64, 128, 256]
+    activation: ['relu', 'tanh']
+  
+  # Regression-specific parameters
+  regression:
+    output_activation: 'linear'
+    loss: 'mse'
+    metrics: ['mae', 'mse']
+    
+    # Architecture
+    hidden_layers: [1, 2, 3]
+    units_per_layer: [32, 64, 128, 256]
+    activation: ['relu', 'tanh']
+
+# Hyperparameter search
+hyperparameter_search:
+  method: 'random'  # 'grid' or 'random'
+  n_iter: 20  # Number of parameter settings sampled (for random search)
+  cv: 5  # Number of cross-validation folds
+  scoring: null  # Override the general scoring if needed
+  refit: true  # Refit the best model on the entire dataset
+  verbose: 1
+  
+  # Early stopping
+  early_stopping: true
+  early_stopping_rounds: 10
+  
+  # Resource management
+  n_jobs: -1  # Number of jobs to run in parallel
+  pre_dispatch: '2*n_jobs'
+  
+  # Error handling
+  error_score: 'raise'  # 'raise' or numeric value to assign to the score if an error occurs
+
+# Logging and output
+logging:
+  level: 'INFO'  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  
+  # MLflow integration
+  mlflow:
+    tracking_uri: 'file:./mlruns'  # Local directory or MLflow server URI
+    experiment_name: 'automl_experiment'
+    log_artifacts: true
+    log_models: true
+    autolog: true
+  
+  # TensorBoard
+  tensorboard:
+    log_dir: './tensorboard_logs'
+    update_freq: 'epoch'
+    profile_batch: 0  # Disable profiling by default
+
+# Feature engineering (optional)
+feature_engineering:
+  # Polynomial features
+  polynomial_features:
+    degree: 2  # Maximum degree of polynomial features
+    interaction_only: false
+    include_bias: true
+  
+  # Feature interactions
+  interactions: true  # Generate interaction features
+  
+  # Feature scaling
+  scale_features: true
+  scale_method: 'standard'  # 'standard', 'minmax', 'robust', 'power'
+  
+  # Feature selection
+  feature_selection_method: 'model'  # 'variance', 'correlation', 'model', 'none'
+  n_features_to_select: 'auto'  # 'auto' for sqrt(n_features) or integer
+  
+  # Outlier handling
+  handle_outliers: true
+  outlier_method: 'zscore'  # 'zscore', 'iqr'
+  outlier_threshold: 3.0
+  
+  # Text processing (if applicable)
+  text_processing:
+    tfidf: true
+    ngram_range: [1, 2]  # Range of n-grams to generate
+    max_features: 1000  # Maximum number of features to keep
+  
+  # Date/time features (if applicable)
+  datetime_features:
+    extract_components: true  # Extract year, month, day, etc.
+    cyclic_encoding: true  # Encode cyclical features (hour, day of week, etc.)
+
+# Model interpretation
+interpretation:
+  # Feature importance
+  feature_importance: true
+  permutation_importance: true
+  
+  # SHAP values
+  shap:
+    calculate: true
+    n_samples: 100  # Number of samples to use for SHAP value calculation
+    plot_type: 'bar'  # 'bar', 'violin', 'dot', etc.
+  
+  # Partial dependence plots
+  partial_dependence: true
+  pd_plot: true
+  
+  # LIME (Local Interpretable Model-agnostic Explanations)
+  lime:
+    calculate: false
+    n_samples: 1000
+    num_features: 10
+
+# Deployment settings
+deployment:
+  # Model serving
+  serving:
+    framework: 'flask'  # 'flask', 'fastapi', 'sagemaker', 'mlflow', etc.
+    host: '0.0.0.0'
+    port: 5000
+    debug: false
+    
+    # API documentation
+    docs: true
+    docs_path: '/docs'
+    
+    # Authentication
+    auth: false
+    auth_type: 'basic'  # 'basic', 'jwt', 'oauth2'
+  
+  # Model packaging
+  package:
+    format: 'pickle'  # 'pickle', 'joblib', 'onnx', 'tensorflow', 'pytorch'
+    include_data_processor: true
+    include_examples: true
+    
+    # Dependencies
+    python_version: '3.8'
+    requirements: 'requirements.txt'
+  
+  # Monitoring
+  monitoring:
+    enabled: true
+    metrics: ['accuracy', 'precision', 'recall', 'f1']
+    sample_rate: 0.1  # Fraction of predictions to log
+    
+    # Drift detection
+    drift_detection: true
+    drift_threshold: 0.1
+    
+    # Alerting
+    alerts:
+      email: false
+      slack: false
+      webhook: false
+
+# Custom callbacks and hooks
+callbacks:
+  # Early stopping
+  early_stopping:
+    monitor: 'val_loss'
+    patience: 10
+    restore_best_weights: true
+  
+  # Model checkpointing
+  model_checkpoint:
+    save_best_only: true
+    monitor: 'val_loss'
+    mode: 'min'
+    save_weights_only: false
+  
+  # Learning rate scheduling
+  reduce_lr:
+    monitor: 'val_loss'
+    factor: 0.1
+    patience: 5
+    min_lr: 1e-6
+  
+  # TensorBoard
+  tensorboard:
+    log_dir: './logs'
+    update_freq: 'epoch'
+    profile_batch: 0
+
+# Custom metrics and losses
+custom_metrics: []
+custom_losses: []
+
+# Custom model architectures
+custom_models: {}
+
+# Custom data loaders
+custom_data_loaders: {}
+
+# Custom feature engineering steps
+custom_feature_engineering: []
+
+# Custom preprocessors
+custom_preprocessors: {}
+
+# Custom postprocessors
+custom_postprocessors: {}
+
+# Custom visualizations
+custom_visualizations: {}
+
+# Custom reports
+custom_reports: {}
+
+# Custom validators
+custom_validators: {}
+
+# Custom optimizers
+custom_optimizers: {}
+
+# Custom callbacks
+custom_callbacks: []
+
+# Custom metrics
+custom_metrics: {}
+
+# Custom losses
+custom_losses: {}
+
+# Custom activation functions
+custom_activations: {}
+
+# Custom layers
+custom_layers: {}
+
+# Custom models
+custom_models: {}
+
+# Custom data generators
+custom_data_generators: {}
+
+# Custom evaluation metrics
+custom_evaluation_metrics: {}
+
+# Custom feature selectors
+custom_feature_selectors: {}
+
+# Custom transformers
+custom_transformers: {}
+
+# Custom imputers
+custom_imputers: {}
+
+# Custom scalers
+custom_scalers: {}
+
+# Custom encoders
+custom_encoders: {}
+
+# Custom feature engineering functions
+custom_feature_engineering_functions: {}
+
+# Custom model interpretation functions
+custom_interpretation_functions: {}
+
+# Custom deployment functions
+custom_deployment_functions: {}
+
+# Custom monitoring functions
+custom_monitoring_functions: {}
+
+# Custom visualization functions
+custom_visualization_functions: {}
