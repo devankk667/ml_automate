@@ -2,17 +2,21 @@
 
 # Missing value imputation
 missing_values:
-  strategy: 'auto'  # 'auto', 'mean', 'median', 'most_frequent', 'constant', 'drop'
+  strategy: 'auto'  # 'auto', 'mean', 'median', 'most_frequent', 'constant', 'drop', 'iterative', 'knn'
   fill_value: null  # Only used when strategy='constant'
   drop_columns_with_high_missing: 0.8  # Drop columns with >80% missing values
   add_missing_indicator: true  # Add binary indicators for missing values
+  iterative_max_iter: 10  # Max iterations for iterative imputer
+  knn_neighbors: 5  # Number of neighbors for KNN imputer
 
 # Categorical encoding
 categorical:
-  strategy: 'onehot'  # 'onehot', 'ordinal', 'target', 'drop'
+  strategy: 'onehot'  # 'onehot', 'ordinal', 'target', 'drop', 'binary'
   handle_unknown: 'ignore'  # 'error', 'ignore'
   min_frequency: 0.01  # Minimum frequency for categories to be kept
   max_categories: 50  # Maximum number of categories to keep
+  target_smoothing: 1.0  # Smoothing parameter for target encoding
+  target_min_samples_leaf: 1  # Min samples per leaf for target encoding
   target_encoder:
     min_samples_leaf: 20  # Minimum samples per leaf for target encoding
     smoothing: 10.0  # Smoothing parameter for target encoding
@@ -27,11 +31,12 @@ scaling:
 
 # Feature selection
 feature_selection:
-  strategy: 'none'  # 'variance', 'correlation', 'model', 'none'
+  strategy: 'none'  # 'variance', 'correlation', 'model', 'mutual_info', 'none'
   n_features: 'auto'  # 'auto' for sqrt(n_features) or integer
   threshold: 0.0  # Threshold for selection
   variance_threshold: 0.0  # Variance threshold for feature selection
   correlation_threshold: 0.9  # Threshold for correlation-based selection
+  mutual_info_threshold: 0.1  # Threshold for mutual information selection
   model_based_selection:  # Parameters for model-based selection
     estimator: 'random_forest'  # 'random_forest', 'lasso', 'xgboost'
     importance_getter: 'auto'  # 'auto', 'feature_importances_', 'coef_'
@@ -39,11 +44,20 @@ feature_selection:
 
 # Outlier detection and handling
 outliers:
-  strategy: 'none'  # 'zscore', 'iqr', 'isolation_forest', 'none'
+  strategy: 'none'  # 'zscore', 'iqr', 'isolation_forest', 'local_outlier_factor', 'none'
   threshold: 3.0  # Z-score or IQR multiplier threshold
   method: 'clip'  # 'clip', 'remove', 'impute'
   contamination: 'auto'  # Contamination parameter for isolation forest
+  n_neighbors: 20  # Number of neighbors for LOF
   random_state: 42  # Random state for reproducibility
+
+# Advanced settings
+advanced:
+  memory_efficient: true  # Use memory-efficient data types
+  chunk_size: 10000  # Chunk size for large datasets
+  parallel_jobs: -1  # Number of parallel jobs
+  enable_caching: true  # Enable preprocessing caching
+  cache_dir: '.preprocessing_cache'  # Cache directory
 
 # Feature engineering
 feature_engineering:

@@ -16,10 +16,12 @@ from auto_ml import AutoML, auto_train
 from data_handling import AutoDataPreprocessor
 
 # MLflow for experiment tracking
-import mlflow
-import mlflow.sklearn
-import mlflow.keras
-from mlflow.models.signature import infer_signature
+try:
+    import mlflow
+    import mlflow.sklearn
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
 
 # Set styles
 plt.style.use('seaborn')
@@ -32,248 +34,35 @@ os.makedirs('reports/metrics', exist_ok=True)
 os.makedirs('tensorboard_logs', exist_ok=True)
 os.makedirs('config', exist_ok=True)
 
-# Model configuration
-MODEL_CONFIG = {
-    # Classification models
-    'logistic_regression': {
-        'class': LogisticRegression,
-        'params': {
-            'max_iter': [100, 200, 500],
-            'C': [0.1, 1, 10],
-            'solver': ['lbfgs', 'saga']
-        }
-    },
-    'random_forest': {
-        'class': RandomForestClassifier,
-        'params': {
-            'n_estimators': [50, 100, 200],
-            'max_depth': [None, 10, 20],
-            'min_samples_split': [2, 5, 10]
-        }
-    },
-    'xgboost': {
-        'class': XGBClassifier,
-        'params': {
-            'n_estimators': [50, 100, 200],
-            'max_depth': [3, 6, 9],
-            'learning_rate': [0.01, 0.1, 0.3]
-        }
-    },
-    # Add more models as needed...
-    
-    # Neural Networks
-    'dnn': {
-        'class': 'neural_network',
-        'params': {
-            'layers': [
-                {'units': 64, 'activation': 'relu', 'dropout': 0.2},
-                {'units': 32, 'activation': 'relu', 'dropout': 0.2},
-                {'units': 16, 'activation': 'relu', 'dropout': 0.1}
-            ],
-            'learning_rate': [0.001, 0.0001],
-            'batch_size': [32, 64],
-            'epochs': [50, 100]
-        }
-    }
-}
-
-# Data preprocessing
-def preprocess_data(X, y=None, task_type='classification'):
-    """Preprocess the input data."""
-    # Handle missing values
-    X = X.fillna(X.median())
-    
-    # Encode categorical variables
-    if y is not None and y.dtype == 'object':
-        le = LabelEncoder()
-        y = le.fit_transform(y)
-    
-    # Scale features
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    return X_scaled, y, scaler
-
-# Model building
-def build_model(model_name: str, input_shape: tuple, num_classes: int = None):
-    """Build a model based on the given name and parameters."""
-    config = MODEL_CONFIG.get(model_name, MODEL_CONFIG['logistic_regression'])
-    
-    if model_name == 'dnn':
-        return build_neural_network(input_shape, num_classes, config['params'])
-    
-    # For scikit-learn models
-    model_class = config['class']
-    return model_class()
-
-def build_neural_network(input_shape: tuple, num_classes: int, params: dict):
-    """Build a neural network model."""
-    model = Sequential()
-    
-    # Input layer
-    model.add(Input(shape=input_shape))
-    
-    # Hidden layers
-    for layer_config in params.get('layers', []):
-        model.add(Dense(layer_config['units'], activation=layer_config['activation']))
-        if 'dropout' in layer_config:
-            model.add(Dropout(layer_config['dropout']))
-        model.add(BatchNormalization())
-    
-    # Output layer
-    output_activation = 'softmax' if num_classes > 2 else 'sigmoid'
-    output_units = num_classes if num_classes > 2 else 1
-    model.add(Dense(output_units, activation=output_activation))
-    
-    # Compile model
-    optimizer = Adam(learning_rate=params.get('learning_rate', 0.001))
-    loss = 'sparse_categorical_crossentropy' if num_classes > 2 else 'binary_crossentropy'
-    metrics = ['accuracy']
-    
-    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
-    return model
-
-def plot_learning_curve(estimator, X, y, cv=5, train_sizes=np.linspace(0.1, 1.0, 5), model_type='sklearn'):
-    """Generate a learning curve plot for the model."""
-    if model_type == 'sklearn':
-        train_sizes, train_scores, test_scores = learning_curve(
-            estimator, X, y, cv=cv, n_jobs=-1, 
-            train_sizes=train_sizes, random_state=42
-        )
-        
-        plt.figure(figsize=(12, 6))
-        plt.plot(train_sizes, np.mean(train_scores, axis=1), 'o-', label='Training score')
-        plt.plot(train_sizes, np.mean(test_scores, axis=1), 'o-', label='Cross-validation score')
-        plt.xlabel('Training Examples')
-        plt.ylabel('Score')
-        plt.title('Learning Curve')
-        plt.legend(loc='best')
-        return plt
-    
-    elif model_type == 'keras':
-        # For Keras models, we'll use a custom learning curve implementation
-        from sklearn.model_selection import KFold
-        
-        kf = KFold(n_splits=cv, shuffle=True, random_state=42)
-        train_scores = []
-        val_scores = []
-        
-        for train_size in train_sizes:
-            train_size_abs = int(train_size * len(X))
-            fold_train_scores = []
-            fold_val_scores = []
-            
-            for train_idx, val_idx in kf.split(X):
-                if train_size_abs < len(train_idx):
-                    train_idx = np.random.choice(train_idx, train_size_abs, replace=False)
-                
-                X_train, X_val = X[train_idx], X[val_idx]
-                y_train, y_val = y[train_idx], y[val_idx]
-                
-                # Clone and train the model
-                model_clone = tf.keras.models.clone_model(estimator)
-                model_clone.compile(
-                    optimizer=estimator.optimizer,
-                    loss=estimator.loss,
-                    metrics=estimator.metrics_names
-                )
-                
-                model_clone.fit(
-                    X_train, y_train,
-                    epochs=10,  # Reduced for speed
-                    verbose=0,
-                    validation_data=(X_val, y_val)
-                )
-                
-                # Evaluate
-                train_score = model_clone.evaluate(X_train, y_train, verbose=0)[1]
-                val_score = model_clone.evaluate(X_val, y_val, verbose=0)[1]
-                
-                fold_train_scores.append(train_score)
-                fold_val_scores.append(val_score)
-            
-            train_scores.append(np.mean(fold_train_scores))
-            val_scores.append(np.mean(fold_val_scores))
-        
-        # Plot the learning curve
-        plt.figure(figsize=(12, 6))
-        plt.plot(train_sizes, train_scores, 'o-', label='Training score')
-        plt.plot(train_sizes, val_scores, 'o-', label='Validation score')
-        plt.xlabel('Training Examples')
-        plt.ylabel('Score')
-        plt.title('Learning Curve')
-        plt.legend(loc='best')
-        return plt
-
-def plot_feature_importance(model, feature_names, model_type='sklearn'):
-    """Plot feature importance for different types of models."""
-    if model_type == 'sklearn':
-        if hasattr(model, 'feature_importances_'):  # Tree-based models
-            importance = model.feature_importances_
-        elif hasattr(model, 'coef_'):  # Linear models
-            importance = np.abs(model.coef_[0])
-        else:
-            return None
-            
-    elif model_type == 'keras':
-        # For neural networks, we'll use permutation importance
-        # This is a simplified version - in practice, you might want to use a proper implementation
-        return None  # Skip for now as it requires test data
-    else:
-        return None
-    
-    # Create the plot
-    plt.figure(figsize=(12, 6))
-    indices = np.argsort(importance)[::-1]
-    
-    # Plot
-    plt.bar(range(len(importance)), importance[indices], align='center')
-    plt.xticks(range(len(importance)), [feature_names[i] for i in indices], rotation=45, ha='right')
-    plt.xlabel('Features')
-    plt.ylabel('Importance')
-    plt.title('Feature Importance')
-    plt.tight_layout()
-    return plt
-
-def save_metrics(y_true, y_pred, y_proba, output_dir):
-    """Save evaluation metrics to a JSON file."""
-    metrics = {
-        'accuracy': accuracy_score(y_true, y_pred),
-        'classification_report': classification_report(y_true, y_pred, output_dict=True)
-    }
-    
-    # Save metrics to JSON
-    metrics_path = os.path.join(output_dir, 'evaluation_metrics.json')
-    with open(metrics_path, 'w') as f:
-        json.dump(metrics, f, indent=4)
-    
-    return metrics_path
 
 def train_model(
     input_path: str,
     target_column: str,
     experiment_name: str,
-    task_type: str = 'classification',
+    task_type: str = 'auto',
     test_size: float = 0.2,
     random_state: int = 42,
     use_mlflow: bool = True,
     config_path: str = None,
-    tensorboard_logdir: str = None
+    use_ensembles: bool = True,
+    use_optuna: bool = True,
+    optuna_trials: int = 100
 ) -> Dict[str, Any]:
     """
-    Automated machine learning pipeline that handles data preprocessing, model selection,
-    training, and evaluation.
+    Enhanced automated machine learning pipeline with advanced features.
     
     Args:
         input_path: Path to the input CSV file
         target_column: Name of the target column
         experiment_name: Name for the MLflow experiment
-        task_type: Type of task - 'classification' or 'regression'
+        task_type: Type of task - 'classification', 'regression', or 'auto'
         test_size: Fraction of data to use for testing
         random_state: Random seed for reproducibility
         use_mlflow: Whether to log to MLflow
         config_path: Path to custom configuration file
-        tensorboard_logdir: Directory to save TensorBoard logs
+        use_ensembles: Whether to create ensemble models
+        use_optuna: Whether to use Optuna for hyperparameter optimization
+        optuna_trials: Number of Optuna trials
         
     Returns:
         Dictionary containing training results and model information
@@ -284,11 +73,13 @@ def train_model(
     run_dir.mkdir(parents=True, exist_ok=True)
     
     # Initialize MLflow if enabled
-    if use_mlflow:
+    if use_mlflow and MLFLOW_AVAILABLE:
         mlflow.set_experiment(experiment_name)
         mlflow.start_run(run_name=f"automl_{timestamp}")
         mlflow.log_param("task_type", task_type)
         mlflow.log_param("target_column", target_column)
+        mlflow.log_param("use_ensembles", use_ensembles)
+        mlflow.log_param("use_optuna", use_optuna)
     
     try:
         # Load and preprocess data
@@ -302,143 +93,142 @@ def train_model(
         X = df.drop(columns=[target_column])
         y = df[target_column]
         
-        # Initialize auto preprocessor
-        preprocessor = AutoDataPreprocessor(config_path=config_path)
+        print(f"Dataset shape: {X.shape}")
+        print(f"Target column: {target_column}")
         
-        # Preprocess the data
-        X_processed, missing_info = preprocessor.fit_transform(X, y)
-        
-        # Log preprocessing info
-        if use_mlflow:
-            mlflow.log_params({"missing_values_handled": bool(missing_info)})
-            if missing_info:
-                mlflow.log_dict(missing_info, "preprocessing/missing_values_handled.json")
-        
-        # Convert to numpy arrays for training
-        if hasattr(X_processed, 'values'):
-            X_processed = X_processed.values
-        if hasattr(y, 'values'):
-            y = y.values
-            
-        # Train and evaluate models
+        # Initialize enhanced AutoML
         print(f"\n{'='*50}")
-        print("Training and evaluating models...")
+        print("Initializing Enhanced AutoML Pipeline...")
         print(f"{'='*50}")
         
-        automl = AutoML(task=task_type, random_state=random_state)
-        
-        # Set up tensorboard directory
-        if tensorboard_logdir is None:
-            tensorboard_logdir = str(run_dir / 'tensorboard_logs')
-        
-        # Train models
-        results = automl.fit(
-            X_processed, y,
-            test_size=test_size,
-            cv=5,
-            n_iter=10,
-            search_method='random',
-            early_stopping_rounds=10,
-            tensorboard_logdir=tensorboard_logdir
+        automl = AutoML(
+            task=task_type,
+            random_state=random_state,
+            use_ensembles=use_ensembles,
+            use_optuna=use_optuna,
+            optuna_trials=optuna_trials,
+            verbose=1
         )
         
-        # Get the best model
-        best_model = automl.best_model
-        best_model_name = automl.best_model_name
+        # Train the models
+        results = automl.fit(
+            X, y,
+            test_size=test_size,
+            cv=5,
+            n_iter=20,
+            search_method='random'
+        )
         
         # Evaluate on test set
         test_metrics = automl.evaluate()
         
         # Save model
-        model_path = str(run_dir / 'model' / 'best_model')
+        model_path = str(run_dir / 'model' / 'best_model.joblib')
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        
-        # Save based on model type
-        if hasattr(best_model, 'save'):  # Keras model
-            best_model.save(model_path)
-            model_type = 'keras'
-        else:  # Scikit-learn model
-            joblib.dump(best_model, f"{model_path}.joblib")
-            model_type = 'sklearn'
+        automl.save_model(model_path)
         
         # Generate visualizations
-        _generate_visualizations(automl, X_processed, y, run_dir)
+        _generate_visualizations(automl, run_dir)
         
         # Log to MLflow
-        if use_mlflow:
+        if use_mlflow and MLFLOW_AVAILABLE:
             # Log parameters
             mlflow.log_params({
-                'best_model': best_model_name,
-                'model_type': model_type,
+                'best_model': automl.best_model_name,
                 'test_size': test_size,
-                'random_state': random_state
+                'random_state': random_state,
+                'models_trained': results['models_trained']
             })
             
             # Log metrics
             mlflow.log_metrics(test_metrics)
+            mlflow.log_metrics({f'cv_{k}': v for k, v in results['model_scores'].items()})
             
             # Log model
-            if model_type == 'keras':
-                mlflow.keras.log_model(best_model, "model")
-            else:
-                mlflow.sklearn.log_model(best_model, "model")
+            mlflow.sklearn.log_model(automl.best_model, "model")
             
             # Log artifacts
             mlflow.log_artifacts(str(run_dir / 'reports'), "reports")
             
             # Log feature importances if available
-            if hasattr(automl, 'feature_importances_') and automl.feature_importances_ is not None:
-                importances = pd.DataFrame({
-                    'feature': preprocessor.feature_names,
-                    'importance': automl.feature_importances_
-                }).sort_values('importance', ascending=False)
-                
-                importance_path = str(run_dir / 'feature_importances.csv')
-                importances.to_csv(importance_path, index=False)
-                mlflow.log_artifact(importance_path)
+            if automl.feature_importances_ is not None:
+                try:
+                    importances = pd.DataFrame({
+                        'feature': [f'feature_{i}' for i in range(len(automl.feature_importances_))],
+                        'importance': automl.feature_importances_
+                    }).sort_values('importance', ascending=False)
+                    
+                    importance_path = str(run_dir / 'feature_importances.csv')
+                    importances.to_csv(importance_path, index=False)
+                    mlflow.log_artifact(importance_path)
+                except Exception as e:
+                    print(f"Warning: Could not save feature importances: {e}")
         
-        # Prepare results
-        results = {
-            'best_model': best_model_name,
-            'model_path': model_path,
-            'model_type': model_type,
-            'metrics': test_metrics,
-            'feature_importances': getattr(automl, 'feature_importances_', None),
-            'feature_names': preprocessor.feature_names,
-            'run_dir': str(run_dir)
+        # Save dataset characteristics
+        if hasattr(automl, 'dataset_characteristics_'):
+            char_path = str(run_dir / 'dataset_characteristics.json')
+            with open(char_path, 'w') as f:
+                json.dump(automl.dataset_characteristics_, f, indent=2)
+        
+        # Save SHAP values if available
+        shap_values = automl.get_shap_values()
+        if shap_values is not None:
+            shap_path = str(run_dir / 'shap_values.npy')
+            np.save(shap_path, shap_values)
+            print("SHAP values saved for model interpretability")
+        
+        # Prepare final results
+        final_results = {
+            'best_model': automl.best_model_name,
+            'best_score': automl.best_score,
+            'task_detected': automl.task,
+            'models_trained': results['models_trained'],
+            'test_metrics': test_metrics,
+            'model_scores': results['model_scores'],
+            'training_times': results['training_times'],
+            'dataset_characteristics': getattr(automl, 'dataset_characteristics_', {}),
+            'feature_importances_available': automl.feature_importances_ is not None,
+            'shap_available': shap_values is not None,
+            'run_directory': str(run_dir)
         }
         
-        # Save results to JSON
-        results_path = str(run_dir / 'training_results.json')
+        # Save final results
+        results_path = str(run_dir / 'final_results.json')
         with open(results_path, 'w') as f:
-            json.dump(results, f, indent=2)
+            json.dump(final_results, f, indent=2)
         
         print(f"\n{'='*50}")
-        print("Training completed successfully!")
-        print(f"Best model: {best_model_name}")
-        print(f"Test metrics: {test_metrics}")
-        print(f"Results saved to: {run_dir}")
+        print("TRAINING COMPLETED SUCCESSFULLY!")
+        print(f"{'='*50}")
+        print(f"Task detected: {automl.task}")
+        print(f"Best model: {automl.best_model_name}")
+        print(f"Best CV score: {automl.best_score:.4f}")
+        print(f"Models trained: {results['models_trained']}")
+        print(f"\nTest metrics:")
+        for metric, value in test_metrics.items():
+            print(f"  {metric}: {value:.4f}")
+        print(f"\nResults saved to: {run_dir}")
         print(f"{'='*50}")
         
-        return results
+        return final_results
     
     except Exception as e:
         print(f"\n{'='*50}")
-        print(f"Error during training: {str(e)}")
+        print(f"ERROR DURING TRAINING: {str(e)}")
         print(f"{'='*50}")
+        import traceback
+        traceback.print_exc()
         raise
     
     finally:
-        if use_mlflow:
-            mlflow.end_run()
+        if use_mlflow and MLFLOW_AVAILABLE:
+            try:
+                mlflow.end_run()
+            except:
+                pass
+                
 
-def _generate_visualizations(
-    self,
-    automl: AutoML,
-    X: np.ndarray,
-    y: np.ndarray,
-    output_dir: Path
-) -> None:
+def _generate_visualizations(automl: AutoML, output_dir: Path) -> None:
     """Generate visualizations for model evaluation."""
     try:
         # Create visualizations directory
@@ -447,276 +237,113 @@ def _generate_visualizations(
         
         # Feature importance plot
         if hasattr(automl, 'feature_importances_') and automl.feature_importances_ is not None:
-            importances = pd.DataFrame({
-                'feature': automl.feature_names,
-                'importance': automl.feature_importances_
-            }).sort_values('importance', ascending=False)
-            
-            plt.figure(figsize=(12, 8))
-            sns.barplot(x='importance', y='feature', data=importances.head(20))
-            plt.title('Top 20 Most Important Features')
-            plt.tight_layout()
-            plt.savefig(str(vis_dir / 'feature_importance.png'))
-            plt.close()
+            try:
+                n_features = len(automl.feature_importances_)
+                feature_names = [f'feature_{i}' for i in range(n_features)]
+                
+                importances = pd.DataFrame({
+                    'feature': feature_names,
+                    'importance': automl.feature_importances_
+                }).sort_values('importance', ascending=False)
+                
+                plt.figure(figsize=(12, 8))
+                top_features = importances.head(20)  # Show top 20 features
+                sns.barplot(x='importance', y='feature', data=top_features)
+                plt.title('Top 20 Most Important Features')
+                plt.tight_layout()
+                plt.savefig(str(vis_dir / 'feature_importance.png'))
+                plt.close()
+                print("✓ Feature importance plot saved")
+            except Exception as e:
+                print(f"Warning: Could not create feature importance plot: {e}")
+        
+        # Model comparison plot
+        if hasattr(automl, 'results_'):
+            try:
+                model_names = list(automl.results_.keys())
+                scores = [automl.results_[name]['score'] for name in model_names]
+                
+                plt.figure(figsize=(12, 6))
+                bars = plt.bar(model_names, scores)
+                plt.xlabel('Models')
+                plt.ylabel('Cross-Validation Score')
+                plt.title('Model Performance Comparison')
+                plt.xticks(rotation=45, ha='right')
+                
+                # Highlight best model
+                if scores:
+                    best_idx = scores.index(max(scores))
+                    bars[best_idx].set_color('red')
+                    bars[best_idx].set_alpha(0.8)
+                
+                plt.tight_layout()
+                plt.savefig(str(vis_dir / 'model_comparison.png'))
+                plt.close()
+                print("✓ Model comparison plot saved")
+            except Exception as e:
+                print(f"Warning: Could not create model comparison plot: {e}")
+        
+        # SHAP summary plot (if available)
+        try:
+            import shap
+            shap_values = automl.get_shap_values()
+            if shap_values is not None and hasattr(automl, 'X_test'):
+                plt.figure(figsize=(12, 8))
+                if isinstance(shap_values, list):
+                    # Multi-class classification
+                    shap.summary_plot(shap_values[0], automl.X_test, show=False)
+                else:
+                    shap.summary_plot(shap_values, automl.X_test, show=False)
+                plt.savefig(str(vis_dir / 'shap_summary.png'), dpi=300, bbox_inches='tight')
+                plt.close()
+                print("✓ SHAP summary plot saved")
+        except Exception as e:
+            print(f"Could not create SHAP plot: {e}")
         
         # Confusion matrix for classification
-        if automl.task == 'classification':
-            y_pred = automl.predict(automl.X_test)
-            cm = confusion_matrix(automl.y_test, y_pred)
-            
-            plt.figure(figsize=(10, 8))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-            plt.title('Confusion Matrix')
-            plt.xlabel('Predicted')
-            plt.ylabel('Actual')
-            plt.tight_layout()
-            plt.savefig(str(vis_dir / 'confusion_matrix.png'))
-            plt.close()
+        if automl.task == 'classification' and hasattr(automl, 'X_test') and hasattr(automl, 'y_test'):
+            try:
+                from sklearn.metrics import confusion_matrix
+                y_pred = automl.predict(automl.X_test)
+                cm = confusion_matrix(automl.y_test, y_pred)
+                
+                plt.figure(figsize=(10, 8))
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+                plt.title('Confusion Matrix')
+                plt.xlabel('Predicted')
+                plt.ylabel('Actual')
+                plt.tight_layout()
+                plt.savefig(str(vis_dir / 'confusion_matrix.png'))
+                plt.close()
+                print("✓ Confusion matrix saved")
+            except Exception as e:
+                print(f"Warning: Could not create confusion matrix: {e}")
         
         # Actual vs Predicted for regression
-        else:
-            y_pred = automl.predict(automl.X_test)
-            
-            plt.figure(figsize=(10, 8))
-            plt.scatter(automl.y_test, y_pred, alpha=0.5)
-            plt.plot([min(automl.y_test), max(automl.y_test)], 
-                     [min(automl.y_test), max(automl.y_test)], 'r--')
-            plt.title('Actual vs Predicted Values')
-            plt.xlabel('Actual')
-            plt.ylabel('Predicted')
-            plt.tight_layout()
-            plt.savefig(str(vis_dir / 'actual_vs_predicted.png'))
-            plt.close()
+        elif automl.task == 'regression' and hasattr(automl, 'X_test') and hasattr(automl, 'y_test'):
+            try:
+                y_pred = automl.predict(automl.X_test)
+                
+                plt.figure(figsize=(10, 8))
+                plt.scatter(automl.y_test, y_pred, alpha=0.5)
+                plt.plot([min(automl.y_test), max(automl.y_test)], 
+                         [min(automl.y_test), max(automl.y_test)], 'r--')
+                plt.title('Actual vs Predicted Values')
+                plt.xlabel('Actual')
+                plt.ylabel('Predicted')
+                plt.tight_layout()
+                plt.savefig(str(vis_dir / 'actual_vs_predicted.png'))
+                plt.close()
+                print("✓ Actual vs Predicted plot saved")
+            except Exception as e:
+                print(f"Warning: Could not create actual vs predicted plot: {e}")
             
     except Exception as e:
         print(f"Warning: Could not generate some visualizations: {str(e)}")
 
-    # Preprocess the data
-    print("Preprocessing data...")
-    X_processed, y_processed, preprocessor = preprocess_data(X, y, task_type)
-    
-    # Split data into training and testing sets
-    print("Splitting data into training and testing sets...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_processed, y_processed, 
-        test_size=test_size, 
-        random_state=random_state,
-        stratify=y if task_type == 'classification' and num_classes > 1 else None
-    )
-    
-    # Set up MLflow if enabled
-    if use_mlflow:
-        mlflow.set_experiment(experiment_name)
-        mlflow.start_run(run_name=f"{model_type}_{timestamp}")
-    
-    try:
-        # Build and train the model
-        print(f"Training {model_type} model...")
-        
-        if model_type in MODEL_CONFIG and MODEL_CONFIG[model_type]['class'] == 'neural_network':
-            # Train neural network
-            model = build_neural_network(
-                input_shape=(X_train.shape[1],),
-                num_classes=num_classes if task_type == 'classification' else 1,
-                params=MODEL_CONFIG[model_type]['params']
-            )
-            
-            # Train the model
-            callbacks = [
-                EarlyStopping(patience=10, restore_best_weights=True),
-                ModelCheckpoint(
-                    os.path.join(run_dir, 'model', 'best_model.h5'),
-                    save_best_only=True,
-                    save_weights_only=False
-                ),
-                TensorBoard(log_dir=os.path.join('tensorboard_logs', f"{experiment_name}_{timestamp}"))
-            ]
-            
-            history = model.fit(
-                X_train, y_train,
-                validation_split=0.2,
-                epochs=MODEL_CONFIG[model_type]['params'].get('epochs', [100])[0],
-                batch_size=MODEL_CONFIG[model_type]['params'].get('batch_size', [32])[0],
-                callbacks=callbacks,
-                verbose=1
-            )
-            
-            # Make predictions
-            if task_type == 'classification':
-                y_pred = np.argmax(model.predict(X_test), axis=1)
-                y_proba = model.predict_proba(X_test)
-            else:
-                y_pred = model.predict(X_test).flatten()
-                y_proba = None
-        else:
-            # Train scikit-learn model
-            model = build_model(model_type, X_train.shape, num_classes if task_type == 'classification' else None)
-            
-            # Hyperparameter tuning with GridSearchCV
-            if model_type in MODEL_CONFIG and 'params' in MODEL_CONFIG[model_type]:
-                print("Performing hyperparameter tuning...")
-                grid_search = GridSearchCV(
-                    model,
-                    MODEL_CONFIG[model_type]['params'],
-                    cv=5,
-                    scoring='accuracy' if task_type == 'classification' else 'neg_mean_squared_error',
-                    n_jobs=-1,
-                    verbose=1
-                )
-                grid_search.fit(X_train, y_train)
-                model = grid_search.best_estimator_
-                print(f"Best parameters: {grid_search.best_params_}")
-            else:
-                model.fit(X_train, y_train)
-            
-            # Make predictions
-            y_pred = model.predict(X_test)
-            y_proba = model.predict_proba(X_test) if hasattr(model, 'predict_proba') else None
-        
-        # Calculate metrics
-        if task_type == 'classification':
-            accuracy = accuracy_score(y_test, y_pred)
-            print(f"Model trained with accuracy: {accuracy:.4f}")
-            
-            # Classification report
-            report = classification_report(y_test, y_pred, output_dict=True)
-            print("\nClassification Report:")
-            print(classification_report(y_test, y_pred))
-            
-            # Log metrics
-            metrics = {
-                'accuracy': accuracy,
-                'precision': report['weighted avg']['precision'],
-                'recall': report['weighted avg']['recall'],
-                'f1_score': report['weighted avg']['f1-score']
-            }
-        else:
-            # Regression metrics
-            mse = mean_squared_error(y_test, y_pred)
-            mae = mean_absolute_error(y_test, y_pred)
-            r2 = r2_score(y_test, y_pred)
-            
-            print(f"\nRegression Metrics:")
-            print(f"MSE: {mse:.4f}")
-            print(f"MAE: {mae:.4f}")
-            print(f"R²: {r2:.4f}")
-            
-            metrics = {
-                'mse': mse,
-                'mae': mae,
-                'r2': r2
-            }
-        
-        # Save metrics
-        metrics_path = os.path.join(run_dir, 'metrics.json')
-        with open(metrics_path, 'w') as f:
-            json.dump(metrics, f, indent=4)
-        
-        # Log to MLflow if enabled
-        if use_mlflow:
-            mlflow.log_params({
-                'model_type': model_type,
-                'task_type': task_type,
-                'test_size': test_size,
-                'random_state': random_state
-            })
-            
-            if model_type in MODEL_CONFIG and 'params' in MODEL_CONFIG[model_type] and hasattr(model, 'best_params_'):
-                mlflow.log_params(model.best_params_)
-            
-            mlflow.log_metrics(metrics)
-            mlflow.log_artifact(metrics_path)
-        
-        # Generate and save plots
-        plots_dir = os.path.join(run_dir, 'plots')
-        os.makedirs(plots_dir, exist_ok=True)
-        
-        # 1. Confusion Matrix (for classification)
-        if task_type == 'classification':
-            cm = confusion_matrix(y_test, y_pred)
-            plt.figure(figsize=(10, 8))
-            labels = sorted(np.unique(y_test))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                       xticklabels=labels, yticklabels=labels)
-            plt.xlabel('Predicted')
-            plt.ylabel('Actual')
-            plt.title('Confusion Matrix')
-            cm_path = os.path.join(plots_dir, 'confusion_matrix.png')
-            plt.savefig(cm_path, bbox_inches='tight')
-            plt.close()
-        
-        # 2. Learning Curve
-        lc_plot = plot_learning_curve(
-            model, X_train, y_train, 
-            model_type='keras' if model_type == 'dnn' else 'sklearn'
-        )
-        lc_path = os.path.join(plots_dir, 'learning_curve.png')
-        lc_plot.savefig(lc_path, bbox_inches='tight')
-        plt.close()
-        
-        # 3. Feature Importance (for tree-based models)
-        if model_type != 'dnn':
-            fi_plot = plot_feature_importance(model, feature_names)
-            if fi_plot:
-                fi_path = os.path.join(plots_dir, 'feature_importance.png')
-                fi_plot.savefig(fi_path, bbox_inches='tight')
-                plt.close()
-        
-        # 4. For regression, plot actual vs predicted
-        if task_type == 'regression':
-            plt.figure(figsize=(10, 6))
-            plt.scatter(y_test, y_pred, alpha=0.5)
-            plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
-            plt.xlabel('Actual')
-            plt.ylabel('Predicted')
-            plt.title('Actual vs Predicted Values')
-            reg_plot_path = os.path.join(plots_dir, 'actual_vs_predicted.png')
-            plt.savefig(reg_plot_path, bbox_inches='tight')
-            plt.close()
-        
-        # Log all plots to MLflow
-        if use_mlflow:
-            for plot_file in os.listdir(plots_dir):
-                mlflow.log_artifact(os.path.join(plots_dir, plot_file), "plots")
-        
-        # Save the model
-        model_dir = os.path.join(run_dir, 'model')
-        os.makedirs(model_dir, exist_ok=True)
-        
-        if model_type == 'dnn':
-            # Save Keras model
-            model_path = os.path.join(model_dir, 'model.h5')
-            model.save(model_path)
-            
-            # Log to MLflow
-            if use_mlflow:
-                mlflow.keras.log_model(model, "model", registered_model_name=f"{experiment_name}_{model_type}")
-        else:
-            # Save scikit-learn model
-            model_path = os.path.join(model_dir, 'model.joblib')
-            joblib.dump(model, model_path)
-            
-            # Log to MLflow
-            if use_mlflow:
-                signature = infer_signature(X_train, model.predict(X_train))
-                mlflow.sklearn.log_model(
-                    sk_model=model,
-                    artifact_path=f"{experiment_name}-model",
-                    signature=signature,
-                    registered_model_name=f"{experiment_name}_{model_type}"
-                )
-        
-        print(f"\nModel and artifacts saved to: {run_dir}")
-        if use_mlflow:
-            print(f"MLflow run ID: {mlflow.active_run().info.run_id}")
-        
-        return model, metrics
-    
-    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Automated Machine Learning Pipeline. "
-                    "Trains and evaluates multiple models on the given dataset."
+        description="Enhanced Automated Machine Learning Pipeline with advanced features."
     )
     
     # Required arguments
@@ -745,9 +372,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task_type",
         type=str,
-        default="classification",
-        choices=["classification", "regression"],
-        help="Type of machine learning task. Options: 'classification' or 'regression' (default: classification)"
+        default="auto",
+        choices=["classification", "regression", "auto"],
+        help="Type of machine learning task. Options: 'classification', 'regression', or 'auto' (default: auto)"
     )
     
     parser.add_argument(
@@ -778,10 +405,24 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "--tensorboard_logdir",
-        type=str,
-        default=None,
-        help="Directory to save TensorBoard logs (default: runs/<experiment_name>_<timestamp>/tensorboard_logs)"
+        "--use_ensembles",
+        action="store_true",
+        default=True,
+        help="Enable ensemble methods (voting, stacking)"
+    )
+    
+    parser.add_argument(
+        "--use_optuna",
+        action="store_true", 
+        default=True,
+        help="Enable Optuna hyperparameter optimization"
+    )
+    
+    parser.add_argument(
+        "--optuna_trials",
+        type=int,
+        default=100,
+        help="Number of Optuna trials for hyperparameter optimization (default: 100)"
     )
     
     args = parser.parse_args()
@@ -796,5 +437,7 @@ if __name__ == "__main__":
         random_state=args.random_state,
         use_mlflow=not args.no_mlflow,
         config_path=args.config_path,
-        tensorboard_logdir=args.tensorboard_logdir
+        use_ensembles=args.use_ensembles,
+        use_optuna=args.use_optuna,
+        optuna_trials=args.optuna_trials
     )

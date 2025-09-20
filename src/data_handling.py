@@ -4,15 +4,16 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Tuple, Union, Any, Optional
+import logging
 
 # Preprocessing
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
+from sklearn.impute import SimpleImputer, IterativeImputer, KNNImputer
 from sklearn.preprocessing import (
     StandardScaler, OneHotEncoder, OrdinalEncoder,
     MinMaxScaler, RobustScaler, PowerTransformer,
-    LabelEncoder, LabelBinarizer
+    LabelEncoder, LabelBinarizer, TargetEncoder
 )
 
 # Feature selection
@@ -29,14 +30,27 @@ from sklearn.base import BaseEstimator, TransformerMixin
 import warnings
 warnings.filterwarnings('ignore')
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Check for optional dependencies
+try:
+    from category_encoders import TargetEncoder as CatTargetEncoder
+    TARGET_ENCODER_AVAILABLE = True
+except ImportError:
+    TARGET_ENCODER_AVAILABLE = False
+
 class AutoDataPreprocessor:
     """
-    Automated data preprocessing pipeline that handles:
+    Enhanced automated data preprocessing pipeline that handles:
     - Missing value imputation
     - Categorical encoding
     - Feature scaling
     - Feature selection
     - Outlier detection and handling
+    - Advanced imputation methods
+    - Target encoding
     """
     
     def __init__(self, config_path: str = None):
@@ -55,33 +69,45 @@ class AutoDataPreprocessor:
         self.encoder = None
         self.selector = None
         
-    def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
+    def _load_config(self, config_path: Optional[str] = None) -> Dict[str, Any]:
         """Load preprocessing configuration from a YAML file."""
         default_config = {
             'missing_values': {
-                'strategy': 'auto',  # 'auto', 'mean', 'median', 'most_frequent', 'constant', 'drop'
+                'strategy': 'auto',  # 'auto', 'mean', 'median', 'most_frequent', 'constant', 'drop', 'iterative', 'knn'
                 'fill_value': None,
-                'drop_columns_with_high_missing': 0.8  # Drop columns with >80% missing values
+                'drop_columns_with_high_missing': 0.8,  # Drop columns with >80% missing values
+                'iterative_max_iter': 10,  # Max iterations for iterative imputer
+                'knn_neighbors': 5  # Number of neighbors for KNN imputer
             },
             'categorical': {
-                'strategy': 'onehot',  # 'onehot', 'ordinal', 'target', 'drop'
+                'strategy': 'onehot',  # 'onehot', 'ordinal', 'target', 'drop', 'binary'
                 'handle_unknown': 'ignore',  # 'error', 'ignore'
-                'min_frequency': 0.01  # Minimum frequency for categories to be kept
+                'min_frequency': 0.01,  # Minimum frequency for categories to be kept
+                'target_smoothing': 1.0,  # Smoothing parameter for target encoding
+                'target_min_samples_leaf': 1  # Min samples per leaf for target encoding
             },
             'scaling': {
                 'strategy': 'standard',  # 'standard', 'minmax', 'robust', 'power', 'none'
                 'with_mean': True,
-                'with_std': True
+                'with_std': True,
+                'quantile_range': (25.0, 75.0)  # For robust scaling
             },
             'feature_selection': {
-                'strategy': 'none',  # 'variance', 'correlation', 'model', 'none'
+                'strategy': 'none',  # 'variance', 'correlation', 'model', 'mutual_info', 'none'
                 'n_features': 'auto',  # Number of features to select, 'auto' for sqrt(n_features)
-                'threshold': 0.0  # Threshold for selection
+                'threshold': 0.0,  # Threshold for selection
+                'correlation_threshold': 0.95  # Threshold for correlation-based selection
             },
             'outliers': {
-                'strategy': 'none',  # 'zscore', 'iqr', 'none'
+                'strategy': 'none',  # 'zscore', 'iqr', 'isolation_forest', 'none'
                 'threshold': 3.0,  # Z-score threshold
-                'method': 'clip'  # 'clip', 'remove', 'impute'
+                'method': 'clip',  # 'clip', 'remove', 'impute'
+                'contamination': 0.1  # Contamination parameter for isolation forest
+            },
+            'advanced': {
+                'memory_efficient': True,  # Use memory-efficient data types
+                'chunk_size': 10000,  # Chunk size for large datasets
+                'parallel_jobs': -1  # Number of parallel jobs
             }
         }
         
@@ -132,6 +158,36 @@ class AutoDataPreprocessor:
                 
         return result
     
+    def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize data types for memory efficiency."""
+        if not self.config['advanced']['memory_efficient']:
+            return df
+        
+        df_optimized = df.copy()
+        
+        for col in df_optimized.columns:
+            col_type = df_optimized[col].dtype
+            
+            if col_type != 'object':
+                c_min = df_optimized[col].min()
+                c_max = df_optimized[col].max()
+                
+                if str(col_type)[:3] == 'int':
+                    if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                        df_optimized[col] = df_optimized[col].astype(np.int8)
+                    elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                        df_optimized[col] = df_optimized[col].astype(np.int16)
+                    elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                        df_optimized[col] = df_optimized[col].astype(np.int32)
+                else:
+                    if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                        df_optimized[col] = df_optimized[col].astype(np.float32)
+        
+        memory_reduction = (df.memory_usage(deep=True).sum() - df_optimized.memory_usage(deep=True).sum()) / df.memory_usage(deep=True).sum() * 100
+        logger.info(f"Memory usage reduced by {memory_reduction:.1f}%")
+        
+        return df_optimized
+    
     def _handle_missing_values(self, X: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """Handle missing values in the dataset."""
         missing_info = {}
@@ -145,6 +201,7 @@ class AutoDataPreprocessor:
         drop_threshold = self.config['missing_values']['drop_columns_with_high_missing']
         fill_value = self.config['missing_values']['fill_value']
         
+        
         # Drop columns with too many missing values
         if drop_threshold < 1.0:  # If 1.0, don't drop any columns
             cols_to_drop = missing_cols[missing_cols / len(X) > drop_threshold].index.tolist()
@@ -153,6 +210,7 @@ class AutoDataPreprocessor:
                 missing_info['dropped_columns'] = cols_to_drop
                 missing_cols = missing_cols.drop(cols_to_drop, errors='ignore')
         
+        # Handle remaining missing values
         # Handle remaining missing values
         if strategy == 'auto':
             # Use different strategies based on column type
@@ -183,6 +241,46 @@ class AutoDataPreprocessor:
                     'missing_count': missing_cols[col],
                     'missing_ratio': missing_cols[col] / len(X)
                 }
+        elif strategy == 'iterative':
+            # Use iterative imputation
+            numeric_cols = X.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                imputer = IterativeImputer(
+                    max_iter=self.config['missing_values']['iterative_max_iter'],
+                    random_state=42
+                )
+                X[numeric_cols] = imputer.fit_transform(X[numeric_cols])
+                
+                for col in numeric_cols:
+                    if col in missing_cols.index:
+                        missing_info[col] = {
+                            'strategy': 'iterative',
+                            'missing_count': missing_cols[col],
+                            'missing_ratio': missing_cols[col] / len(X)
+                        }
+        
+        elif strategy == 'knn':
+            # Use KNN imputation
+            numeric_cols = X.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                imputer = KNNImputer(
+                    n_neighbors=self.config['missing_values']['knn_neighbors']
+                )
+                X[numeric_cols] = imputer.fit_transform(X[numeric_cols])
+                
+                for col in numeric_cols:
+                    if col in missing_cols.index:
+                        missing_info[col] = {
+                            'strategy': 'knn',
+                            'missing_count': missing_cols[col],
+                            'missing_ratio': missing_cols[col] / len(X)
+                        }
+            
+            # Handle categorical columns with mode
+            cat_cols = X.select_dtypes(include=['object', 'category']).columns
+            for col in cat_cols:
+                if col in missing_cols.index:
+                    X[col] = X[col].fillna(X[col].mode()[0] if not X[col].mode().empty else 'missing')
         else:
             # Use the specified strategy for all columns
             if strategy == 'drop':
@@ -212,7 +310,7 @@ class AutoDataPreprocessor:
         
         return X, missing_info
     
-    def _create_preprocessing_pipeline(self, X: pd.DataFrame) -> Tuple[ColumnTransformer, List[str]]:
+    def _create_preprocessing_pipeline(self, X: pd.DataFrame, y: pd.Series = None) -> Tuple[ColumnTransformer, List[str]]:
         """Create a preprocessing pipeline based on the data types and configuration."""
         col_types = self._detect_column_types(X)
         
@@ -222,8 +320,9 @@ class AutoDataPreprocessor:
         boolean_features = col_types['boolean']
         
         # Numeric pipeline
+        imputer_strategy = 'median' if self.config['missing_values']['strategy'] in ['auto', 'median'] else 'mean'
         numeric_transformer = Pipeline(steps=[
-            ('imputer', SimpleImputer(strategy=self.config['missing_values']['strategy'])),
+            ('imputer', SimpleImputer(strategy=imputer_strategy)),
             ('scaler', self._get_scaler())
         ])
         
@@ -238,6 +337,22 @@ class AutoDataPreprocessor:
                 ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
                 ('ordinal', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
             ])
+        elif self.config['categorical']['strategy'] == 'target' and y is not None:
+            # Use target encoding
+            if TARGET_ENCODER_AVAILABLE:
+                categorical_transformer = Pipeline(steps=[
+                    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+                    ('target', CatTargetEncoder(
+                        smoothing=self.config['categorical']['target_smoothing'],
+                        min_samples_leaf=self.config['categorical']['target_min_samples_leaf']
+                    ))
+                ])
+            else:
+                logger.warning("Target encoding not available, falling back to ordinal encoding")
+                categorical_transformer = Pipeline(steps=[
+                    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+                    ('ordinal', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
+                ])
         else:  # 'drop' or unsupported strategy
             categorical_transformer = 'drop'
         
@@ -280,7 +395,9 @@ class AutoDataPreprocessor:
         elif strategy == 'minmax':
             return MinMaxScaler()
         elif strategy == 'robust':
-            return RobustScaler()
+            return RobustScaler(
+                quantile_range=scaling_config.get('quantile_range', (25.0, 75.0))
+            )
         elif strategy == 'power':
             return PowerTransformer(method='yeo-johnson')
         else:  # 'none'
@@ -300,6 +417,9 @@ class AutoDataPreprocessor:
         # Store original column names
         self.original_columns = X.columns.tolist()
         
+        # Optimize data types for memory efficiency
+        X = self._optimize_dtypes(X)
+        
         # Handle missing values
         X_processed, missing_info = self._handle_missing_values(X)
         
@@ -307,7 +427,7 @@ class AutoDataPreprocessor:
         self.preprocessor, self.feature_names = self._create_preprocessing_pipeline(X_processed)
         
         # Fit and transform the data
-        X_transformed = self.preprocessor.fit_transform(X_processed, y)
+        X_transformed = self.preprocessor.fit_transform(X_processed)
         
         # Convert to DataFrame with appropriate column names
         if hasattr(self.preprocessor, 'get_feature_names_out'):
@@ -338,6 +458,9 @@ class AutoDataPreprocessor:
         """Transform new data using the fitted preprocessor."""
         if self.preprocessor is None:
             raise ValueError("The preprocessor has not been fitted yet. Call fit_transform first.")
+        
+        # Optimize data types for memory efficiency
+        X = self._optimize_dtypes(X)
         
         # Handle missing values
         X_processed, _ = self._handle_missing_values(X)
@@ -375,6 +498,7 @@ class AutoDataPreprocessor:
         strategy = self.config['feature_selection']['strategy']
         n_features = self.config['feature_selection']['n_features']
         threshold = self.config['feature_selection']['threshold']
+        correlation_threshold = self.config['feature_selection']['correlation_threshold']
         
         if strategy == 'variance':
             # Remove low-variance features
@@ -387,7 +511,7 @@ class AutoDataPreprocessor:
             # Remove highly correlated features
             corr_matrix = X.corr().abs()
             upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-            to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
+            to_drop = [column for column in upper.columns if any(upper[column] > correlation_threshold)]
             X_selected = X.drop(columns=to_drop)
             selected_features = X_selected.columns.tolist()
             
@@ -423,6 +547,25 @@ class AutoDataPreprocessor:
             selected_indices = indices[:n_features]
             X_selected = X.iloc[:, selected_indices]
             selected_features = X.columns[selected_indices].tolist()
+        
+        elif strategy == 'mutual_info':
+            # Use mutual information for feature selection
+            if y is None:
+                raise ValueError("Target variable y is required for mutual information feature selection.")
+            
+            if n_features == 'auto':
+                n_features = int(np.sqrt(X.shape[1]))
+            elif isinstance(n_features, float) and 0 < n_features < 1:
+                n_features = int(X.shape[1] * n_features)
+            
+            # Determine if classification or regression
+            is_classification = len(np.unique(y)) < 0.1 * len(y)
+            score_func = mutual_info_classif if is_classification else mutual_info_regression
+            
+            selector = SelectKBest(score_func=score_func, k=n_features)
+            X_selected = selector.fit_transform(X, y)
+            selected_features = X.columns[selector.get_support()].tolist()
+            X_selected = pd.DataFrame(X_selected, columns=selected_features, index=X.index)
             
         else:  # 'none' or unsupported strategy
             return X
@@ -440,6 +583,7 @@ class AutoDataPreprocessor:
         strategy = self.config['outliers']['strategy']
         threshold = self.config['outliers']['threshold']
         method = self.config['outliers']['method']
+        contamination = self.config['outliers']['contamination']
         
         if strategy == 'zscore':
             z_scores = (X - X.mean()) / X.std()
@@ -497,6 +641,29 @@ class AutoDataPreprocessor:
                 X_imputed = X.copy()
                 for col in X.columns:
                     col_outliers = outliers[col]
+                    if col_outliers.any():
+                        median_val = X[col].median()
+                        X_imputed.loc[col_outliers, col] = median_val
+                return X_imputed
+        
+        elif strategy == 'isolation_forest':
+            # Use Isolation Forest for outlier detection
+            from sklearn.ensemble import IsolationForest
+            
+            iso_forest = IsolationForest(
+                contamination=contamination,
+                random_state=42,
+                n_jobs=self.config['advanced']['parallel_jobs']
+            )
+            
+            outliers = iso_forest.fit_predict(X) == -1
+            
+            if method == 'remove':
+                return X[~outliers]
+            elif method == 'impute':
+                X_imputed = X.copy()
+                for col in X.columns:
+                    col_outliers = outliers
                     if col_outliers.any():
                         median_val = X[col].median()
                         X_imputed.loc[col_outliers, col] = median_val
