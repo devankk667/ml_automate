@@ -166,7 +166,8 @@ class AutoMLPipeline:
     def predict(
         self, 
         X: Union[pd.DataFrame, np.ndarray],
-        return_proba: bool = False
+        return_proba: bool = False,
+        _preprocessed: bool = False
     ) -> np.ndarray:
         """
         Make predictions using the trained model.
@@ -174,6 +175,7 @@ class AutoMLPipeline:
         Args:
             X: Feature matrix
             return_proba: Whether to return class probabilities (for classification)
+            _preprocessed: Whether the data has already been preprocessed
             
         Returns:
             Predicted values or probabilities
@@ -181,7 +183,10 @@ class AutoMLPipeline:
         if self.model_ is None:
             raise RuntimeError("The model has not been trained yet. Call 'fit' first.")
         
-        X_processed = self.preprocess_data(X, fit=False)[0]
+        if _preprocessed:
+            X_processed = X
+        else:
+            X_processed = self.preprocess_data(X, fit=False)[0]
         
         if return_proba and hasattr(self.model_, 'predict_proba'):
             return self.model_.predict_proba(X_processed)
@@ -208,10 +213,10 @@ class AutoMLPipeline:
             raise RuntimeError("The model has not been trained yet. Call 'fit' first.")
         
         X_processed, y_processed = self.preprocess_data(X, y, fit=False)
-        y_pred = self.predict(X_processed)
+        y_pred = self.predict(X_processed, _preprocessed=True)
         
         if self.task == 'classification':
-            y_score = self.predict(X_processed, return_proba=True) if hasattr(self.model_, 'predict_proba') else None
+            y_score = self.predict(X_processed, return_proba=True, _preprocessed=True) if hasattr(self.model_, 'predict_proba') else None
             return get_classification_metrics(y_processed, y_pred, y_score)
         else:
             return get_regression_metrics(y_processed, y_pred)

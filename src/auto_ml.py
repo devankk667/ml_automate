@@ -60,7 +60,7 @@ class AutoML:
     
     def __init__(
         self,
-        task: str = 'classification',
+        task: str = 'auto',
         scoring: str = None,
         n_jobs: int = -1,
         random_state: int = 42,
@@ -70,14 +70,14 @@ class AutoML:
         Initialize the AutoML pipeline.
         
         Args:
-            task: Type of task - 'classification' or 'regression'
+            task: Type of task - 'classification', 'regression', or 'auto' to infer from data
             scoring: Scoring metric to optimize
             n_jobs: Number of jobs to run in parallel
             random_state: Random seed for reproducibility
             verbose: Verbosity level
         """
         self.task = task
-        self.scoring = scoring or ('accuracy' if task == 'classification' else 'neg_mean_squared_error')
+        self.scoring = scoring
         self.n_jobs = n_jobs
         self.random_state = random_state
         self.verbose = verbose
@@ -91,9 +91,75 @@ class AutoML:
         # Set random seeds for reproducibility
         np.random.seed(random_state)
         tf.random.set_seed(random_state)
+
+    def _infer_task(self, y: pd.Series) -> str:
+        """Infers the task type from the target variable."""
+        # Heuristic for task detection
+        if pd.api.types.is_float_dtype(y.dtype):
+            # Float target is almost always regression
+            return 'regression'
+
+        # Check for object or categorical types
+        if y.dtype == 'object' or pd.api.types.is_categorical_dtype(y.dtype):
+            return 'classification'
+
+        # Check for integer types
+        if pd.api.types.is_integer_dtype(y.dtype):
+            # Low cardinality integer is classification
+            unique_values = y.nunique()
+            if unique_values / len(y) < 0.05 or unique_values <= 20:
+                return 'classification'
+            else:
+                return 'regression'
         
-        # Initialize models based on task
-        self._init_models()
+        # Default fallback
+        return 'regression'
+
+    def _validate_input(self, X: ArrayLike, y: ArrayLike):
+        """Performs validation checks on the input data X and y."""
+
+        # Check for empty inputs
+        if X is None or y is None:
+            raise ValueError("Input data X and y cannot be None.")
+
+        # Convert to pandas for robust checks
+        if not isinstance(X, pd.DataFrame):
+            X_df = pd.DataFrame(X)
+        else:
+            X_df = X
+
+        if not isinstance(y, pd.Series):
+            y_s = pd.Series(y)
+        else:
+            y_s = y
+
+        if X_df.empty or y_s.empty:
+            raise ValueError("Input data X and y cannot be empty.")
+
+        # Check for consistent lengths
+        if len(X_df) != len(y_s):
+            raise ValueError(f"Inconsistent number of samples. X has {len(X_df)} and y has {len(y_s)} samples.")
+
+        # Check X dimensions
+        if len(X_df.shape) != 2:
+            raise ValueError(f"Input X must be 2-dimensional. Got shape: {X_df.shape}")
+
+        # Check for NaNs in y
+        if y_s.isnull().any():
+            raise ValueError("Target y contains NaN values. Please handle them before training.")
+
+        # Warn about NaNs in X
+        if X_df.isnull().values.any():
+            if self.verbose > 0:
+                print("Warning: Input X contains NaN values. These will be handled by the preprocessor.")
+
+        # Task-specific validation
+        if self.task == 'classification':
+            if y_s.nunique() < 2:
+                raise ValueError(f"Classification task requires at least 2 classes, but found only {y_s.nunique()} in the target variable y.")
+            if y_s.nunique() > 50 and self.verbose > 0: # Heuristic threshold
+                 print(f"Warning: The target variable has a high number of unique values ({y_s.nunique()}). "
+                       "This might be a regression problem misidentified as classification.")
     
     def _init_models(self) -> None:
         """Initialize the models to evaluate."""
@@ -295,16 +361,31 @@ class AutoML:
         Returns:
             Dictionary containing the best model and evaluation metrics
         """
-        # Convert to numpy arrays if they're pandas objects
-        if hasattr(X, 'values'):
-            X = X.values
-        if hasattr(y, 'values'):
-            y = y.values
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+        if not isinstance(y, pd.Series):
+            y = pd.Series(y)
+
+        # Infer task if not specified
+        if self.task == 'auto':
+            self.task = self._infer_task(y)
+            if self.verbose > 0:
+                print(f"Automatically detected task: {self.task}")
+
+        # Validate input data
+        self._validate_input(X, y)
+
+        # Set default scoring metric if not provided
+        if self.scoring is None:
+            self.scoring = 'accuracy' if self.task == 'classification' else 'neg_mean_squared_error'
+
+        # Initialize models now that task is known
+        self._init_models()
         
         # Split data into train and test sets
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=self.random_state,
-            stratify=y if self.task == 'classification' and len(np.unique(y)) > 1 else None
+            stratify=y if self.task == 'classification' and y.nunique() > 1 else None
         )
         
         # Store test data for final evaluation

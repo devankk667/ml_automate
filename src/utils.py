@@ -333,9 +333,16 @@ def get_classification_metrics(
         'f1': f1_score(y_true, y_pred, average=average, zero_division=0),
     }
     
-    if y_score is not None and len(np.unique(y_true)) == 2:
-        metrics['roc_auc'] = roc_auc_score(y_true, y_score)
-    
+    if y_score is not None:
+        if len(np.unique(y_true)) == 2:
+            # For binary classification, y_score is likely (n, 2), take prob of positive class
+            if y_score.ndim == 2 and y_score.shape[1] == 2:
+                metrics['roc_auc'] = roc_auc_score(y_true, y_score[:, 1])
+            else: # Already 1D
+                metrics['roc_auc'] = roc_auc_score(y_true, y_score)
+        else: # Multiclass
+             metrics['roc_auc'] = roc_auc_score(y_true, y_score, multi_class='ovr')
+
     return metrics
 
 

@@ -222,8 +222,11 @@ class AutoDataPreprocessor:
         boolean_features = col_types['boolean']
         
         # Numeric pipeline
+        imputer_strategy = self.config['missing_values']['strategy']
+        if imputer_strategy in ['auto', 'iterative']:
+            imputer_strategy = 'median' # fallback for pipeline
         numeric_transformer = Pipeline(steps=[
-            ('imputer', SimpleImputer(strategy=self.config['missing_values']['strategy'])),
+            ('imputer', SimpleImputer(strategy=imputer_strategy)),
             ('scaler', self._get_scaler())
         ])
         
@@ -297,6 +300,8 @@ class AutoDataPreprocessor:
         Returns:
             Tuple of (transformed_X, missing_info)
         """
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
         # Store original column names
         self.original_columns = X.columns.tolist()
         
@@ -339,6 +344,9 @@ class AutoDataPreprocessor:
         if self.preprocessor is None:
             raise ValueError("The preprocessor has not been fitted yet. Call fit_transform first.")
         
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X, columns=self.original_columns)
+
         # Handle missing values
         X_processed, _ = self._handle_missing_values(X)
         
