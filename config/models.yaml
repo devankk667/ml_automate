@@ -1,0 +1,98 @@
+# Model configurations for the AutoML pipeline
+# This file defines the models to be used for classification and regression tasks,
+# along with their hyperparameter search spaces.
+
+classification:
+  random_forest:
+    model: "sklearn.ensemble.RandomForestClassifier"
+    params:
+      n_estimators: [50, 100, 200]
+      max_depth: [null, 10, 20, 30]
+      min_samples_split: [2, 5, 10]
+      min_samples_leaf: [1, 2, 4]
+  xgboost:
+    model: "xgboost.XGBClassifier"
+    params:
+      n_estimators: [50, 100, 200]
+      max_depth: [3, 6, 9]
+      learning_rate: [0.01, 0.1, 0.3]
+      subsample: [0.8, 1.0]
+      colsample_bytree: [0.8, 1.0]
+  logistic_regression:
+    model: "sklearn.linear_model.LogisticRegression"
+    params:
+      C: [0.001, 0.01, 0.1, 1, 10, 100]
+      penalty: ['l2']
+      solver: ['lbfgs', 'saga']
+  gradient_boosting:
+    model: "sklearn.ensemble.GradientBoostingClassifier"
+    params:
+      n_estimators: [50, 100, 200]
+      learning_rate: [0.01, 0.1, 0.3]
+      max_depth: [3, 5, 7]
+      subsample: [0.8, 1.0]
+  svm:
+    model: "sklearn.svm.SVC"
+    params:
+      C: [0.1, 1, 10]
+      kernel: ['linear', 'rbf', 'poly']
+      gamma: ['scale', 'auto']
+  dnn:
+    model: "neural_network"
+    params:
+      layers:
+        - {units: 64, activation: 'relu', dropout: 0.2}
+        - {units: 32, activation: 'relu', dropout: 0.2}
+        - {units: 16, activation: 'relu', dropout: 0.1}
+      learning_rate: [0.001, 0.0001]
+      batch_size: [32, 64]
+      epochs: [50, 100]
+      optimizer: ['adam', 'rmsprop']
+
+regression:
+  random_forest:
+    model: "sklearn.ensemble.RandomForestRegressor"
+    params:
+      n_estimators: [50, 100, 200]
+      max_depth: [null, 10, 20, 30]
+      min_samples_split: [2, 5, 10]
+      min_samples_leaf: [1, 2, 4]
+  xgboost:
+    model: "xgboost.XGBRegressor"
+    params:
+      n_estimators: [50, 100, 200]
+      max_depth: [3, 6, 9]
+      learning_rate: [0.01, 0.1, 0.3]
+      subsample: [0.8, 1.0]
+      colsample_bytree: [0.8, 1.0]
+  linear_regression:
+    model: "sklearn.linear_model.LinearRegression"
+    params: {}
+  ridge:
+    model: "sklearn.linear_model.Ridge"
+    params:
+      alpha: [0.001, 0.01, 0.1, 1, 10, 100]
+      solver: ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']
+  lasso:
+    model: "sklearn.linear_model.Lasso"
+    params:
+      alpha: [0.001, 0.01, 0.1, 1, 10, 100]
+      selection: ['cyclic', 'random']
+  gradient_boosting:
+    model: "sklearn.ensemble.GradientBoostingRegressor"
+    params:
+      n_estimators: [50, 100, 200]
+      learning_rate: [0.01, 0.1, 0.3]
+      max_depth: [3, 5, 7]
+      subsample: [0.8, 1.0]
+  dnn:
+    model: "neural_network"
+    params:
+      layers:
+        - {units: 64, activation: 'relu', dropout: 0.2}
+        - {units: 32, activation: 'relu', dropout: 0.2}
+        - {units: 16, activation: 'relu', dropout: 0.1}
+      learning_rate: [0.001, 0.0001]
+      batch_size: [32, 64]
+      epochs: [50, 100]
+      optimizer: ['adam', 'rmsprop']

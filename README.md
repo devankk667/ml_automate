@@ -1,190 +1,154 @@
-# AutoML Pipeline Project
+# End-to-End AutoML Pipeline
 
-An end-to-end automated machine learning pipeline that handles data preprocessing, model training, evaluation, and deployment. This project is designed to be flexible, scalable, and easy to use for both classification and regression tasks.
+This project provides a robust and scalable end-to-end Automated Machine Learning (AutoML) pipeline. It handles everything from data ingestion and preprocessing to automated model selection, hyperparameter tuning, and evaluation. The pipeline is designed for both local development and production deployment on Kubeflow.
+
+![Project Architecture](https://i.imgur.com/example.png)  <!-- Placeholder for a future architecture diagram -->
 
 ## 🚀 Features
 
-- **Automated Data Preprocessing**: Handles missing values, outliers, and feature engineering
-- **Model Selection & Tuning**: Automatically selects and tunes the best model for your data
-- **Comprehensive Evaluation**: Provides detailed metrics and visualizations
-- **Easy Integration**: Simple CLI interface for running the pipeline
-- **Reproducible Results**: Configurable random seeds and version control
+-   **Automated Preprocessing**: A powerful and configurable pipeline that handles missing values, categorical encoding, feature scaling, and outlier detection.
+-   **Automated Model Selection**: Automatically trains and evaluates multiple models (e.g., Logistic Regression, RandomForest, XGBoost, DNNs) to find the best one for your data.
+-   **Hyperparameter Tuning**: Uses Randomized Search to efficiently find the best hyperparameters for the top-performing models.
+-   **Experiment Tracking**: Integrated with **MLflow** to log parameters, metrics, and model artifacts for full reproducibility and easy comparison of runs.
+-   **Dual Execution Modes**:
+    -   **Local Mode**: A simple `run_pipeline.py` script for quick local development and testing.
+    -   **Production Mode**: A **Kubeflow Pipelines (KFP)** definition for orchestrated, scalable, and containerized runs in a production environment.
+-   **Configurable**: All aspects of the pipeline, from preprocessing steps to the models and their hyperparameter search spaces, are controlled via simple YAML configuration files.
 
 ## 📁 Project Structure
 
 ```
-ml_automate/
-├── configs/                # Configuration files
-│   ├── preprocessing.yaml  # Preprocessing configurations
-│   └── model_config.yaml   # Model training configurations
-├── data/                   # Data files
-│   ├── raw/               # Raw data files
-│   └── processed/         # Processed data files
-├── models/                # Saved models and artifacts
-├── notebooks/             # Jupyter notebooks for exploration
-├── src/                   # Source code
-│   ├── data/             # Data handling and preprocessing
-│   ├── models/           # Model definitions and training
-│   ├── visualization/    # Plotting and visualization utilities
-│   └── pipeline.py       # Main pipeline implementation
-└── tests/                # Test files
-    ├── unit/            # Unit tests
-    └── integration/     # Integration tests
+├── config/                   # Configuration files
+│   ├── automl_config.yaml
+│   ├── models.yaml             # Model and hyperparameter definitions
+│   └── preprocessing_config.yaml
+├── data/                     # Data (managed by DVC, not in git)
+├── infra/                    # Dockerfiles for Kubeflow components
+├── pipelines/                # Kubeflow pipeline definitions
+├── src/                      # Source code
+│   ├── __init__.py
+│   ├── auto_ml.py            # Core AutoML logic
+│   ├── data_handling.py      # Automated data preprocessor
+│   ├── data_ingestion.py     # Data download utility
+│   ├── train.py              # Main training script
+│   └── utils.py              # Utility functions
+├── tests/                    # Unit and integration tests
+├── run_pipeline.py           # Entry point for local runs
+├── pipeline.yaml             # Compiled Kubeflow pipeline
+└── README.md
 ```
 
-## 🛠️ Installation
+## 🛠️ Getting Started
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd ml_automate
-   ```
+### 1. Installation
 
-2. **Create and activate a virtual environment**
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\Activate  # On Windows
-   # or
-   source .venv/bin/activate  # On macOS/Linux
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-
-## 🚀 Quick Start
-
-### Running the Pipeline
-
-1. **Prepare your data**
-   - Place your dataset in `data/raw/`
-   - Ensure your target column is specified or can be auto-detected
-
-2. **Run the pipeline**
-   ```bash
-   python -m src.pipeline --input_path data/raw/your_data.csv --target_column target
-   ```
-
-### Example with Sample Data
+First, clone the repository and navigate into the project directory:
 
 ```bash
-# Generate sample Iris dataset
-python -c "
-from sklearn.datasets import load_iris
-import pandas as pd
-iris = load_iris()
-df = pd.DataFrame(iris.data, columns=iris.feature_names)
-df['target'] = iris.target
-df.to_csv('data/raw/iris.csv', index=False)
-"
-
-# Run the pipeline
-python -m src.pipeline --input_path data/raw/iris.csv --target_column target
+git clone <repository-url>
+cd <project-directory>
 ```
 
-## 📊 Outputs
+It is recommended to use a virtual environment:
 
-The pipeline generates the following outputs in the `output/` directory:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On macOS/Linux
+# .venv\Scripts\Activate.ps1  # On Windows (PowerShell)
+```
 
-- `cleaning_report.json`: Summary of data cleaning steps
-- `results.json`: Model evaluation metrics
-- `predictions.csv`: Model predictions on test set
-- `plots/`: Visualizations including:
-  - `target_distribution.png`
-  - `correlation_heatmap.png`
-  - `pair_plot.png`
+Install the required dependencies:
 
-## 🤖 Available Models
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-The pipeline automatically selects from the following models:
+To install the project in editable mode, which is recommended for development and required for running tests, run:
+```bash
+pip install -e .
+```
 
-- **Classification**:
-  - Logistic Regression
-  - Random Forest
-  - XGBoost
-  - LightGBM
-  - Neural Networks
+### 2. Configuration
 
-- **Regression**:
-  - Linear Regression
-  - Random Forest Regressor
-  - XGBoost Regressor
-  - Neural Networks
+The pipeline's behavior is controlled by several YAML files in the `config/` directory:
 
-## ⚙️ Configuration
+-   `datasets.yaml`: Define your datasets here. For each dataset, specify its URL, target column, and type.
+-   `models.yaml`: Configure the models to be used for classification and regression tasks, along with their hyperparameter search spaces.
+-   `preprocessing_config.yaml`: Customize the automated data preprocessing steps.
 
-Customize the pipeline behavior by creating/modifying files in the `configs/` directory:
+### 3. Local Execution
 
-- `preprocessing.yaml`: Data preprocessing parameters
-- `model_config.yaml`: Model training parameters
+To run the pipeline on a dataset defined in `datasets.yaml`, use the `run_pipeline.py` script:
+
+```bash
+python run_pipeline.py --dataset <dataset_name>
+```
+
+For example, to run the pipeline on the `iris` dataset:
+
+```bash
+python run_pipeline.py --dataset iris
+```
+
+This script will automatically:
+1.  Ingest the data from the URL specified in `datasets.yaml`.
+2.  Run the training script (`src/train.py`), which handles preprocessing, model selection, and evaluation.
+3.  Log the experiment to MLflow.
+
+### 4. Experiment Tracking with MLflow
+
+This project uses MLflow to track experiments. To view the results, launch the MLflow UI from the project root:
+
+```bash
+mlflow ui
+```
+
+This will start a local server (usually at `http://127.0.0.1:5000`) where you can browse all tracked experiments, compare runs, and view artifacts like confusion matrices and feature importance plots.
+
+### 5. Production Deployment with Kubeflow
+
+For production runs, the pipeline can be deployed to a Kubeflow cluster.
+
+**a. Compile the Pipeline**
+
+The Kubeflow pipeline is defined in `pipelines/main_pipeline.py`. To compile it into a static YAML file, run:
+
+```bash
+python pipelines/main_pipeline.py
+```
+
+This will generate `pipeline.yaml`.
+
+**b. Run on Kubeflow**
+
+1.  Upload the generated `pipeline.yaml` to your Kubeflow Pipelines UI.
+2.  Create a new run from the uploaded pipeline.
+3.  When creating the run, you will need to provide the required parameters, such as:
+    -   `data_url`: The URL of your dataset (e.g., `https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data`).
+    -   `target_column`: The name of the target variable.
+    -   `experiment_name`: The name for the MLflow experiment.
 
 ## 🧪 Testing
 
-Run tests to ensure everything is working correctly:
+To ensure the reliability of the pipeline, we have a suite of unit and integration tests. To run the tests, first install the testing dependencies:
 
 ```bash
-# Run unit tests
-python -m pytest tests/unit/
+pip install -r tests/requirements-test.txt
+```
 
-# Run integration tests
-python -m pytest tests/integration/
+Then, run the test suite using `pytest`:
+
+```bash
+python -m pytest tests/
 ```
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please follow these steps:
+Contributions are welcome! Please follow these steps to contribute:
 
-1. Fork the repository
-2. Create a new branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built with ❤️ using Python and popular ML libraries
-- Inspired by best practices in MLOps and AutoML
-This single command will automatically execute the data ingestion, data preparation, and model training steps in sequence.
-
-### 2. How to Add a New Dataset
-
-To add a new dataset to the project, you only need to add a new entry to the `datasets.yaml` file.
-
-For example, to add a new dataset called `my_dataset`, you would add the following to `datasets.yaml`:
-```yaml
-my_dataset:
-  url: "http://path/to/your/dataset.csv"
-  target_column: "name_of_the_target_column"
-  dataset_type: "iris" # or "wine", or a new type you define in data_handling.py
-  # ... any other necessary metadata
-```
-Once added, you can run the entire pipeline with `python run_pipeline.py --dataset my_dataset`.
-
-## Experiment Tracking with MLflow
-
-This project uses **MLflow** to track experiments. The training script is instrumented to automatically log:
--   Hyperparameters (e.g., `max_iter`)
--   Performance metrics (e.g., `accuracy`)
--   **A confusion matrix plot** as a visual artifact.
--   The trained model as a versioned artifact.
-
-To view the MLflow UI, you can run `mlflow ui` from the project root. This will start a local server to browse all the tracked experiments.
-
-## Advanced Usage: Orchestration with Kubeflow
-
-The `pipelines/main_pipeline.py` script uses the Kubeflow Pipelines (KFP) SDK to define a generic, end-to-end workflow that can be run in a production environment.
-
-To compile the pipeline definition, run:
-`python pipelines/main_pipeline.py`
-
-This generates a `pipeline.yaml` file. This file can be uploaded to the Kubeflow UI. When creating a run from the UI, you would provide the parameters for the specific dataset, for example:
-- **data_url**: `https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data`
-- **dataset_type**: `iris`
-- **target_column**: `species`
-- **experiment_name**: `Iris Classification`
+1.  Fork the repository.
+2.  Create a new branch for your feature or bug fix (`git checkout -b feature/your-amazing-feature`).
+3.  Make your changes and commit them with a clear message (`git commit -m 'Add some amazing feature'`).
+4.  Push your changes to your forked repository (`git push origin feature/your-amazing-feature`).
+5.  Open a Pull Request to the main repository.

@@ -334,7 +334,7 @@ def get_classification_metrics(
     }
     
     if y_score is not None and len(np.unique(y_true)) == 2:
-        metrics['roc_auc'] = roc_auc_score(y_true, y_score)
+        metrics['roc_auc'] = roc_auc_score(y_true, y_score[:, 1])
     
     return metrics
 

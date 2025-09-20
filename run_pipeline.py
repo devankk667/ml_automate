@@ -28,29 +28,19 @@ def main(dataset_name: str):
 
     # Define file paths
     raw_data_path = os.path.join("data", f"raw_{dataset_name}.csv")
-    processed_data_path = os.path.join("data", f"processed_{dataset_name}.csv")
 
     # --- Step 1: Data Ingestion ---
     ingestion_command = [
-        sys.executable, "src/data_ingestion.py",  # Changed from "python" to sys.executable
+        sys.executable, "src/data_ingestion.py",
         "--url", config['url'],
         "--output_path", raw_data_path
     ]
     run_command(ingestion_command)
 
-    # --- Step 2: Data Handling ---
-    handling_command = [
-        sys.executable, "src/data_handling.py",  # Changed from "python" to sys.executable
-        "--input_path", raw_data_path,
-        "--output_path", processed_data_path,
-        "--dataset_type", config['dataset_type']
-    ]
-    run_command(handling_command)
-
-    # --- Step 3: Model Training ---
+    # --- Step 2: Model Training (with integrated preprocessing) ---
     training_command = [
-        sys.executable, "src/train.py",  # Changed from "python" to sys.executable
-        "--input_path", processed_data_path,
+        sys.executable, "src/train.py",
+        "--input_path", raw_data_path,
         "--target_column", config['target_column'],
         "--experiment_name", config.get('experiment_name', f"{dataset_name.title()} Classification")
     ]

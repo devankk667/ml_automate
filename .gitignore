@@ -21,3 +21,7 @@ env/
 # IDE
 .vscode/
 .idea/
+
+# Test artifacts
+.coverage
+*.egg-info/

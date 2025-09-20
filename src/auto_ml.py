@@ -7,26 +7,12 @@ This module provides automated model selection, training, and evaluation.
 import os
 import time
 import joblib
+import yaml
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Union, Any, Optional
 from pathlib import Path
-
-# Model imports
-from sklearn.ensemble import (
-    RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier,
-    RandomForestRegressor, GradientBoostingRegressor, AdaBoostRegressor
-)
-from sklearn.linear_model import (
-    LogisticRegression, RidgeClassifier, SGDClassifier,
-    LinearRegression, Ridge, Lasso, ElasticNet
-)
-from sklearn.svm import SVC, SVR
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from xgboost import XGBClassifier, XGBRegressor
-from lightgbm import LGBMClassifier, LGBMRegressor
-from catboost import CatBoostClassifier, CatBoostRegressor
+import importlib
 
 # Model selection and evaluation
 from sklearn.model_selection import (
@@ -38,22 +24,31 @@ from sklearn.metrics import (
     roc_auc_score, mean_squared_error, mean_absolute_error, r2_score,
     make_scorer, confusion_matrix, classification_report
 )
-
 # Deep Learning
-import tensorflow as tf
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
-from tensorflow.keras.optimizers import Adam, RMSprop, SGD
-from tensorflow.keras.callbacks import (
-    EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
-)
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential, Model
+    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
+    from tensorflow.keras.optimizers import Adam, RMSprop, SGD
+    from tensorflow.keras.callbacks import (
+        EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
+    )
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
 
 # Type aliases
 ArrayLike = Union[np.ndarray, pd.DataFrame, pd.Series]
-ModelType = Union[
-    RandomForestClassifier, GradientBoostingClassifier, LogisticRegression,
-    SVC, XGBClassifier, LGBMClassifier, CatBoostClassifier, Sequential
-]
+ModelType = Union[Any]
+
+def get_class(class_path: str) -> Any:
+    """Dynamically import a class from a string path."""
+    try:
+        module_path, class_name = class_path.rsplit('.', 1)
+        module = importlib.import_module(module_path)
+        return getattr(module, class_name)
+    except (ImportError, AttributeError) as e:
+        raise ImportError(f"Could not import class {class_path}: {e}")
 
 class AutoML:
     """Automated Machine Learning pipeline for model selection and training."""
@@ -64,7 +59,8 @@ class AutoML:
         scoring: str = None,
         n_jobs: int = -1,
         random_state: int = 42,
-        verbose: int = 1
+        verbose: int = 1,
+        models_config_path: str = 'config/models.yaml'
     ):
         """
         Initialize the AutoML pipeline.
@@ -75,12 +71,14 @@ class AutoML:
             n_jobs: Number of jobs to run in parallel
             random_state: Random seed for reproducibility
             verbose: Verbosity level
+            models_config_path: Path to the models configuration YAML file
         """
         self.task = task
         self.scoring = scoring or ('accuracy' if task == 'classification' else 'neg_mean_squared_error')
         self.n_jobs = n_jobs
         self.random_state = random_state
         self.verbose = verbose
+        self.models_config_path = models_config_path
         self.models = {}
         self.best_model = None
         self.best_score = -np.inf
@@ -90,136 +88,48 @@ class AutoML:
         
         # Set random seeds for reproducibility
         np.random.seed(random_state)
-        tf.random.set_seed(random_state)
+        if TF_AVAILABLE:
+            tf.random.set_seed(random_state)
         
         # Initialize models based on task
         self._init_models()
     
     def _init_models(self) -> None:
-        """Initialize the models to evaluate."""
-        if self.task == 'classification':
-            self.models = {
-                'random_forest': {
-                    'model': RandomForestClassifier(random_state=self.random_state),
-                    'params': {
-                        'n_estimators': [50, 100, 200],
-                        'max_depth': [None, 10, 20, 30],
-                        'min_samples_split': [2, 5, 10],
-                        'min_samples_leaf': [1, 2, 4]
-                    }
-                },
-                'xgboost': {
-                    'model': XGBClassifier(random_state=self.random_state, n_jobs=self.n_jobs),
-                    'params': {
-                        'n_estimators': [50, 100, 200],
-                        'max_depth': [3, 6, 9],
-                        'learning_rate': [0.01, 0.1, 0.3],
-                        'subsample': [0.8, 1.0],
-                        'colsample_bytree': [0.8, 1.0]
-                    }
-                },
-                'logistic_regression': {
-                    'model': LogisticRegression(random_state=self.random_state, max_iter=1000, n_jobs=self.n_jobs),
-                    'params': {
-                        'C': [0.001, 0.01, 0.1, 1, 10, 100],
-                        'penalty': ['l2'],
-                        'solver': ['lbfgs', 'saga']
-                    }
-                },
-                'gradient_boosting': {
-                    'model': GradientBoostingClassifier(random_state=self.random_state),
-                    'params': {
-                        'n_estimators': [50, 100, 200],
-                        'learning_rate': [0.01, 0.1, 0.3],
-                        'max_depth': [3, 5, 7],
-                        'subsample': [0.8, 1.0]
-                    }
-                },
-                'svm': {
-                    'model': SVC(random_state=self.random_state, probability=True),
-                    'params': {
-                        'C': [0.1, 1, 10],
-                        'kernel': ['linear', 'rbf', 'poly'],
-                        'gamma': ['scale', 'auto']
-                    }
-                },
-                'dnn': {
-                    'model': 'neural_network',
-                    'params': {
-                        'layers': [
-                            {'units': 64, 'activation': 'relu', 'dropout': 0.2},
-                            {'units': 32, 'activation': 'relu', 'dropout': 0.2},
-                            {'units': 16, 'activation': 'relu', 'dropout': 0.1}
-                        ],
-                        'learning_rate': [0.001, 0.0001],
-                        'batch_size': [32, 64],
-                        'epochs': [50, 100],
-                        'optimizer': ['adam', 'rmsprop']
-                    }
-                }
-            }
-        else:  # regression
-            self.models = {
-                'random_forest': {
-                    'model': RandomForestRegressor(random_state=self.random_state, n_jobs=self.n_jobs),
-                    'params': {
-                        'n_estimators': [50, 100, 200],
-                        'max_depth': [None, 10, 20, 30],
-                        'min_samples_split': [2, 5, 10],
-                        'min_samples_leaf': [1, 2, 4]
-                    }
-                },
-                'xgboost': {
-                    'model': XGBRegressor(random_state=self.random_state, n_jobs=self.n_jobs),
-                    'params': {
-                        'n_estimators': [50, 100, 200],
-                        'max_depth': [3, 6, 9],
-                        'learning_rate': [0.01, 0.1, 0.3],
-                        'subsample': [0.8, 1.0],
-                        'colsample_bytree': [0.8, 1.0]
-                    }
-                },
-                'linear_regression': {
-                    'model': LinearRegression(n_jobs=self.n_jobs),
-                    'params': {}
-                },
-                'ridge': {
-                    'model': Ridge(random_state=self.random_state),
-                    'params': {
-                        'alpha': [0.001, 0.01, 0.1, 1, 10, 100],
-                        'solver': ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']
-                    }
-                },
-                'lasso': {
-                    'model': Lasso(random_state=self.random_state),
-                    'params': {
-                        'alpha': [0.001, 0.01, 0.1, 1, 10, 100],
-                        'selection': ['cyclic', 'random']
-                    }
-                },
-                'gradient_boosting': {
-                    'model': GradientBoostingRegressor(random_state=self.random_state),
-                    'params': {
-                        'n_estimators': [50, 100, 200],
-                        'learning_rate': [0.01, 0.1, 0.3],
-                        'max_depth': [3, 5, 7],
-                        'subsample': [0.8, 1.0]
-                    }
-                },
-                'dnn': {
-                    'model': 'neural_network',
-                    'params': {
-                        'layers': [
-                            {'units': 64, 'activation': 'relu', 'dropout': 0.2},
-                            {'units': 32, 'activation': 'relu', 'dropout': 0.2},
-                            {'units': 16, 'activation': 'relu', 'dropout': 0.1}
-                        ],
-                        'learning_rate': [0.001, 0.0001],
-                        'batch_size': [32, 64],
-                        'epochs': [50, 100],
-                        'optimizer': ['adam', 'rmsprop']
-                    }
-                }
+        """Initialize the models to evaluate from the YAML config file."""
+        with open(self.models_config_path, 'r') as f:
+            all_configs = yaml.safe_load(f)
+
+        task_config = all_configs.get(self.task)
+        if not task_config:
+            raise ValueError(f"No configuration found for task '{self.task}' in {self.models_config_path}")
+
+        for model_name, config in task_config.items():
+            model_class_str = config['model']
+
+            if model_class_str == 'neural_network':
+                if not TF_AVAILABLE:
+                    if self.verbose > 0:
+                        print(f"Skipping model '{model_name}': TensorFlow is not installed.")
+                    continue
+                model_instance = 'neural_network'
+            else:
+                try:
+                    model_class = get_class(model_class_str)
+                    # Pass random_state to the model if it supports it
+                    # This is a bit of a simplification; a more robust way would be to inspect the signature
+                    model_instance = model_class(random_state=self.random_state)
+                except (TypeError, ImportError) as e:
+                    try:
+                        # Fallback for models that don't accept random_state
+                        model_instance = model_class()
+                    except Exception as inner_e:
+                         if self.verbose > 0:
+                            print(f"Skipping model '{model_name}': Could not instantiate class {model_class_str}. Error: {inner_e}")
+                         continue
+
+            self.models[model_name] = {
+                'model': model_instance,
+                'params': config.get('params', {})
             }
     
     def _build_neural_network(
@@ -227,7 +137,7 @@ class AutoML:
         input_shape: Tuple[int],
         output_units: int,
         params: Dict[str, Any]
-    ) -> tf.keras.Model:
+    ) -> 'tf.keras.Model':
         """Build a neural network model."""
         model = Sequential()
         model.add(Input(shape=input_shape))
@@ -324,7 +234,7 @@ class AutoML:
             start_time = time.time()
             
             try:
-                if model_name == 'dnn':
+                if model_info['model'] == 'neural_network':
                     # Special handling for neural networks
                     model, score = self._train_neural_network(
                         X_train, y_train, X_test, y_test,
@@ -413,7 +323,7 @@ class AutoML:
         params: Dict[str, Any],
         early_stopping_rounds: int = 10,
         tensorboard_logdir: str = None
-    ) -> Tuple[tf.keras.Model, float]:
+    ) -> Tuple['tf.keras.Model', float]:
         """Train a neural network model with hyperparameter tuning."""
         # Set up callbacks
         callbacks = [

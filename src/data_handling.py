@@ -152,15 +152,14 @@ class AutoDataPreprocessor:
                 X = X.drop(columns=cols_to_drop)
                 missing_info['dropped_columns'] = cols_to_drop
                 missing_cols = missing_cols.drop(cols_to_drop, errors='ignore')
-        
+
+        col_types = self._detect_column_types(X)
+
         # Handle remaining missing values
         if strategy == 'auto':
             # Use different strategies based on column type
-            col_types = self._detect_column_types(X)
-            
             for col in missing_cols.index:
                 if col in col_types['numerical']:
-                    # For numerical columns, use median for skewed data, mean otherwise
                     if X[col].skew() > 1.0 or X[col].skew() < -1.0:
                         fill_val = X[col].median()
                         strategy_used = 'median'
@@ -168,11 +167,9 @@ class AutoDataPreprocessor:
                         fill_val = X[col].mean()
                         strategy_used = 'mean'
                 elif col in col_types['categorical'] or col in col_types['boolean']:
-                    # For categorical/boolean, use mode
                     fill_val = X[col].mode()[0] if not X[col].mode().empty else None
                     strategy_used = 'most_frequent'
                 else:
-                    # For other types, use a constant or drop
                     fill_val = fill_value if fill_value is not None else 'missing'
                     strategy_used = 'constant'
                 
@@ -192,16 +189,16 @@ class AutoDataPreprocessor:
                     raise ValueError("fill_value must be specified when strategy='constant'")
                 
                 for col in missing_cols.index:
-                    if strategy in ['mean', 'median', 'most_frequent']:
-                        if strategy == 'mean':
-                            fill_val = X[col].mean()
-                        elif strategy == 'median':
-                            fill_val = X[col].median()
-                        else:  # most_frequent
-                            fill_val = X[col].mode()[0] if not X[col].mode().empty else None
-                    else:  # constant
+                    if strategy in ['mean', 'median'] and col in col_types['numerical']:
+                        fill_val = X[col].mean() if strategy == 'mean' else X[col].median()
+                    elif strategy == 'most_frequent' and (col in col_types['categorical'] or col in col_types['boolean']):
+                        fill_val = X[col].mode()[0] if not X[col].mode().empty else None
+                    elif strategy == 'constant':
                         fill_val = fill_value
-                    
+                    else:
+                        # Skip imputation if strategy is not applicable to the column type
+                        continue
+
                     X[col] = X[col].fillna(fill_val)
                     missing_info[col] = {
                         'strategy': strategy,
@@ -223,7 +220,7 @@ class AutoDataPreprocessor:
         
         # Numeric pipeline
         numeric_transformer = Pipeline(steps=[
-            ('imputer', SimpleImputer(strategy=self.config['missing_values']['strategy'])),
+            ('imputer', SimpleImputer(strategy='median')),
             ('scaler', self._get_scaler())
         ])
         
@@ -297,6 +294,10 @@ class AutoDataPreprocessor:
         Returns:
             Tuple of (transformed_X, missing_info)
         """
+        # Ensure X is a DataFrame
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
+
         # Store original column names
         self.original_columns = X.columns.tolist()
         
@@ -339,6 +340,10 @@ class AutoDataPreprocessor:
         if self.preprocessor is None:
             raise ValueError("The preprocessor has not been fitted yet. Call fit_transform first.")
         
+        # Ensure X is a DataFrame
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
+
         # Handle missing values
         X_processed, _ = self._handle_missing_values(X)
         
@@ -504,119 +509,3 @@ class AutoDataPreprocessor:
         
         # If no valid strategy or method, return original data
         return X
-
-import json
-
-def prepare_data(input_path: str, output_path: str, dataset_type: str):
-    """
-    Loads and prepares raw data based on the dataset type.
-    
-    Args:
-        input_path: Path to the input data file
-        output_path: Path to save the processed data
-        dataset_type: Type of dataset ('iris', 'wine', or 'custom')
-    """
-    print(f"Loading {dataset_type} data from {input_path}...")
-
-    if dataset_type == 'iris':
-        column_names = ['sepal_length', 'sepal_width', 'petal_length', 'petal_width', 'species']
-        df = pd.read_csv(input_path, header=None, names=column_names)
-        print("Data loaded successfully. Processing...")
-
-        # Encode the categorical species column
-        label_encoder = LabelEncoder()
-        df['species'] = label_encoder.fit_transform(df['species'])
-        print("Species column encoded.")
-
-    elif dataset_type == 'wine':
-        column_names = [
-            'class', 'alcohol', 'malic_acid', 'ash', 'alcalinity_of_ash',
-            'magnesium', 'total_phenols', 'flavanoids', 'nonflavanoid_phenols',
-            'proanthocyanins', 'color_intensity', 'hue',
-            'od280_od315_of_diluted_wines', 'proline'
-        ]
-        df = pd.read_csv(input_path, header=None, names=column_names)
-        print("Data loaded successfully. Processing...")
-
-        # The target 'class' is 1-indexed. Make it 0-indexed.
-        df['class'] = df['class'] - 1
-        print("Class column adjusted to be 0-indexed.")
-        
-        # Set target column
-        target_col = 'class'
-        
-    elif dataset_type == 'custom':
-        # For custom datasets, assume CSV with header
-        df = pd.read_csv(input_path)
-        print("Custom dataset loaded successfully.")
-        
-        # For custom datasets, the target column should be specified separately
-        # or we can try to infer it (e.g., last column named 'target' or 'class')
-        possible_targets = ['target', 'class', 'label', 'y', 'target_variable']
-        target_col = None
-        
-        for col in possible_targets:
-            if col in df.columns:
-                target_col = col
-                break
-        
-        if target_col is None:
-            # If no obvious target, assume last column is the target
-            target_col = df.columns[-1]
-            print(f"No obvious target column found. Using '{target_col}' as the target.")
-    
-    else:
-        raise ValueError("Unsupported dataset type. Please choose 'iris', 'wine', or 'custom'.")
-    
-    # Initialize the preprocessor
-    preprocessor = AutoDataPreprocessor()
-    
-    # Separate features and target
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
-    
-    # Preprocess the data
-    print("Preprocessing data...")
-    X_processed, missing_info = preprocessor.fit_transform(X, y)
-    
-    # Add the target column back
-    processed_df = pd.concat([X_processed, y.reset_index(drop=True)], axis=1)
-    
-    # Ensure the output directory exists
-    output_dir = os.path.dirname(output_path)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-    
-    # Save the processed data
-    processed_df.to_csv(output_path, index=False)
-    print(f"Processed data saved to {output_path}")
-    
-    # Save preprocessing info
-    if missing_info:
-        info_path = os.path.join(output_dir, 'preprocessing_info.json')
-        with open(info_path, 'w') as f:
-            json.dump(missing_info, f, indent=2)
-        print(f"Preprocessing information saved to {info_path}")
-    
-    return processed_df, target_col
-
-
-def main():
-    """Main function to handle command line arguments."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Prepare raw data for modeling')
-    parser.add_argument('--input_path', type=str, required=True, 
-                        help='Path to the raw data file')
-    parser.add_argument('--output_path', type=str, required=True, 
-                        help='Path to save the processed data')
-    parser.add_argument('--dataset_type', type=str, required=True, 
-                        choices=['iris', 'wine', 'custom'],
-                        help='Type of dataset')
-    
-    args = parser.parse_args()
-    prepare_data(args.input_path, args.output_path, args.dataset_type)
-
-
-if __name__ == "__main__":
-    main()
