@@ -79,7 +79,11 @@ The pipeline's behavior is controlled by several YAML files in the `config/` dir
 
 ### 3. Local Execution
 
-To run the pipeline on a dataset defined in `datasets.yaml`, use the `run_pipeline.py` script:
+There are two ways to run the pipeline locally: with a remote dataset defined by a URL, or with a local dataset on your machine.
+
+**a. Running with a Remote Dataset**
+
+To run the pipeline on a remote dataset, define it in `datasets.yaml` with a `url` key, like the `iris` example. Then, run the pipeline:
 
 ```bash
 python run_pipeline.py --dataset <dataset_name>
@@ -96,7 +100,38 @@ This script will automatically:
 2.  Run the training script (`src/train.py`), which handles preprocessing, model selection, and evaluation.
 3.  Log the experiment to MLflow.
 
-### 4. Experiment Tracking with MLflow
+**b. Running with a Local Dataset**
+
+To run the pipeline with a local dataset, you first need to download the data to your machine. For this example, we'll use the [PIRvision Fog Presence Detection dataset](https://archive.ics.uci.edu/dataset/1101/pirvision_fog_presence_detection).
+
+1.  **Download the data:** Create a directory (e.g., `temp_data`) and download the dataset into it.
+2.  **Update `datasets.yaml`:** Add a new entry for your local dataset. Instead of a `url`, provide a `local_path` to the CSV file.
+
+    ```yaml
+    pirvision:
+      local_path: "temp_data/pirvision_office_dataset1.csv"
+      target_column: "Label"
+      dataset_type: "custom"
+      experiment_name: "PIRvision Fog Detection"
+    ```
+
+3.  **Run the pipeline:**
+    ```bash
+    python run_pipeline.py --dataset pirvision
+    ```
+The pipeline will skip the download step and use your local file directly.
+
+### 4. Prediction Example
+
+After a pipeline run is complete, a `predict_example.py` script is created to demonstrate how to load the trained model and make predictions on new data. To run it, simply execute the script:
+
+```bash
+python predict_example.py
+```
+
+This will load the latest model, preprocess a few samples from the dataset, and print the predictions.
+
+### 5. Experiment Tracking with MLflow
 
 This project uses MLflow to track experiments. To view the results, launch the MLflow UI from the project root:
 

@@ -333,6 +333,7 @@ class AutoDataPreprocessor:
         if self.config['outliers']['strategy'] != 'none':
             X_transformed = self._handle_outliers(X_transformed)
         
+        self.feature_names = X_transformed.columns.tolist()
         return X_transformed, missing_info
     
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:

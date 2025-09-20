@@ -26,16 +26,23 @@ def main(dataset_name: str):
 
     config = configs[dataset_name]
 
-    # Define file paths
-    raw_data_path = os.path.join("data", f"raw_{dataset_name}.csv")
-
-    # --- Step 1: Data Ingestion ---
-    ingestion_command = [
-        sys.executable, "src/data_ingestion.py",
-        "--url", config['url'],
-        "--output_path", raw_data_path
-    ]
-    run_command(ingestion_command)
+    # Determine data path: local or remote
+    if 'local_path' in config:
+        raw_data_path = config['local_path']
+        print(f"Using local dataset: {raw_data_path}")
+    elif 'url' in config:
+        raw_data_path = os.path.join("data", f"raw_{dataset_name}.csv")
+        print(f"Downloading remote dataset from: {config['url']}")
+        # --- Step 1: Data Ingestion ---
+        ingestion_command = [
+            sys.executable, "src/data_ingestion.py",
+            "--url", config['url'],
+            "--output_path", raw_data_path
+        ]
+        run_command(ingestion_command)
+    else:
+        print("Error: Dataset config must contain either 'local_path' or 'url'.")
+        sys.exit(1)
 
     # --- Step 2: Model Training (with integrated preprocessing) ---
     training_command = [

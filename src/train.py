@@ -23,7 +23,7 @@ import mlflow.keras
 from sklearn.metrics import confusion_matrix
 
 # Set styles
-plt.style.use('seaborn')
+plt.style.use('seaborn-v0_8')
 sns.set_style('whitegrid')
 
 # Create output directories
@@ -200,6 +200,10 @@ def train_model(
         model_path = str(run_dir / 'model' / 'best_model')
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
         
+        # Save model and preprocessor
+        preprocessor_path = str(run_dir / 'model' / 'preprocessor.joblib')
+        joblib.dump(preprocessor, preprocessor_path)
+
         # Save based on model type
         if hasattr(best_model, 'save'):  # Keras model
             best_model.save(model_path)
@@ -250,6 +254,7 @@ def train_model(
             'model_path': model_path,
             'model_type': model_type,
             'metrics': test_metrics,
+            'target_column': target_column,
             'feature_names': list(automl.feature_names) if hasattr(automl, 'feature_names') else None,
             'run_dir': str(run_dir)
         }

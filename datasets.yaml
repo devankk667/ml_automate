@@ -28,3 +28,9 @@ wine:
     - "hue"
     - "od280_od315_of_diluted_wines"
     - "proline"
+
+pirvision:
+  local_path: "temp_data/pirvision_office_dataset1.csv"
+  target_column: "Label"
+  dataset_type: "custom"
+  experiment_name: "PIRvision Fog Detection"
